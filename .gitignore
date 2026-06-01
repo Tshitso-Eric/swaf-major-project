@@ -1,0 +1,25 @@
+# Root .gitignore for SWAF Project
+
+# Python
+__pycache__/
+*.pyc
+venv/
+venv_swaf/
+.env
+
+# Datasets (Large files)
+Back-End/data/public_datasets/
+
+# React
+front-end/node_modules/
+front-end/build/
+front-end/.pnp
+front-end/.pnp.js
+
+# Testing
+front-end/coverage/
+
+# Misc
+.DS_Store
+*.log
+.ipynb_checkpoints/

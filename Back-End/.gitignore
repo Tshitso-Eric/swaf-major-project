@@ -1,0 +1,22 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+venv_swaf/
+
+# React
+node_modules/
+build/
+
+# Datasets
+Back-End/data/public_datasets/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
