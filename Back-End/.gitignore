@@ -12,9 +12,6 @@ venv_swaf/
 node_modules/
 build/
 
-# Datasets
-Back-End/data/public_datasets/
-
 # Jupyter
 .ipynb_checkpoints/
 
