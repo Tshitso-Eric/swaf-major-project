@@ -9,7 +9,7 @@ ORACLE_IP=$(curl -s ifconfig.me)
 
 echo "=== Installing system packages ==="
 sudo apt-get update -y
-sudo apt-get install -y python3 python3-pip python3-venv nodejs npm nginx git
+sudo apt-get install -y python3 python3-pip python3-venv nginx git
 
 echo "=== Cloning repo ==="
 if [ -d "$REPO_DIR" ]; then
