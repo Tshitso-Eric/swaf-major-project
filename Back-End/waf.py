@@ -1,4 +1,5 @@
-from typing import Tuple, Dict
+from __future__ import annotations
+from typing import Tuple, Dict, List
 from fastapi import Request, HTTPException
 from urllib.parse import urlparse, urlunparse
 from db import get_db_connection
@@ -51,7 +52,7 @@ def get_ml_engine():
             print(f"[ERROR] Failed to load ML engine: {e}")
     return ML_ENGINE
 
-async def load_rules() -> list[dict]:
+async def load_rules() -> List[dict]:
     global RULES_CACHE, LAST_LOAD
     current_time = time.time()
     if RULES_CACHE is not None and (current_time - LAST_LOAD) < CACHE_TTL_SECONDS:
@@ -82,7 +83,7 @@ async def load_rules() -> list[dict]:
         cursor.close()
         conn.close()
 
-def match_rules(content: str, rules: list[dict]) -> list[dict]:
+def match_rules(content: str, rules: List[dict]) -> List[dict]:
     matched = []
     for rule in rules:
         compiled_pattern = rule.get("_compiled")
@@ -108,7 +109,7 @@ async def predict_with_ml(request: Request, body_str: str, headers_str: str) -> 
         print(f"[ERROR] ML error: {e}")
         return "ALLOW", 0.0, None
 
-async def hybrid_detection(request: Request, inspect_text: str, body_str: str, headers_str: str, rules: list[dict]) -> Tuple[str, str, str]:
+async def hybrid_detection(request: Request, inspect_text: str, body_str: str, headers_str: str, rules: List[dict]) -> Tuple[str, str, str]:
     # 1. Rules
     request_matched = match_rules(inspect_text, rules)
     block_rules = [r for r in request_matched if r["action"] == "BLOCK"]
