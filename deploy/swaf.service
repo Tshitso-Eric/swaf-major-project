@@ -1,0 +1,14 @@
+[Unit]
+Description=SWAF Backend (FastAPI)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/swaf/Back-End
+EnvironmentFile=/home/ubuntu/swaf/Back-End/.env
+ExecStart=/home/ubuntu/swaf/Back-End/venv/bin/uvicorn app:app --host 127.0.0.1 --port 5000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

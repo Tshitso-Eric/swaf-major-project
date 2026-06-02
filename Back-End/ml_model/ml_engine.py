@@ -22,16 +22,16 @@ class HybridMLEngine:
         try:
             if os.path.exists(self.xgboost_path):
                 self.xgb_model = joblib.load(self.xgboost_path)
-                print("✅ XGBoost Pipeline loaded")
-            
+                print("[OK] XGBoost Pipeline loaded")
+
             if os.path.exists(self.autoencoder_path):
                 self.ae_model = joblib.load(self.autoencoder_path)
-                print("✅ Autoencoder Model loaded")
-            
+                print("[OK] Autoencoder Model loaded")
+
             if self.xgb_model:
                 self.is_ready = True
         except Exception as e:
-            print(f"❌ Error loading models: {e}")
+            print(f"[ERROR] Error loading models: {e}")
 
     def _prepare_features(self, request_data):
         body = request_data.get('body', '') or ''

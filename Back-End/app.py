@@ -18,14 +18,15 @@ load_dotenv()
 
 app = FastAPI()
 
-# CORS for React frontend (Dashboard) and the protected web app
+# CORS — base origins plus any extra URL set via FRONTEND_URL env var
+_origins = ["http://localhost:3000", "http://localhost:5000", "http://localhost:8080"]
+_extra = os.getenv("FRONTEND_URL", "")
+if _extra and _extra not in _origins:
+    _origins.append(_extra)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", #SWAF frontend
-        "http://localhost:5000", #SWAF backend
-        "http://localhost:8080"  #web app
-    ],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -448,12 +449,14 @@ async def get_waf_settings(authorization: str = Depends(security)):
     except:
         raise HTTPException(401)
     
-    # Get settings from database or config file
+    from waf import RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS
     return {
         "target_app_url": os.getenv("TARGET_SERVER", "http://localhost:8080"),
         "waf_mode": os.getenv("WAF_MODE", "block"),
         "listening_port": 5000,
-        "enable_logging": True
+        "enable_logging": True,
+        "rate_limit_max_requests": RATE_LIMIT_MAX_REQUESTS,
+        "rate_limit_window_seconds": RATE_LIMIT_WINDOW_SECONDS,
     }
 
 @app.post("/api/settings", dependencies=[Depends(security)])

@@ -7,8 +7,10 @@ venv/
 venv_swaf/
 .env
 
-# Datasets (Large files)
+# Datasets and archives (large files)
 Back-End/data/public_datasets/
+Back-End.zip
+*.zip
 
 # React
 front-end/node_modules/

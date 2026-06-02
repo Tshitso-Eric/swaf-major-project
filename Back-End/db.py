@@ -5,17 +5,23 @@ import os
 
 load_dotenv()
 
-# Create a connection pool
 db_config = {
     "host": os.getenv('DB_HOST'),
+    "port": int(os.getenv('DB_PORT', '3306')),
     "user": os.getenv('DB_USER'),
     "password": os.getenv('DB_PASSWORD'),
-    "database": os.getenv('DB_NAME')
+    "database": os.getenv('DB_NAME'),
 }
+
+# Enable SSL when DB_USE_SSL=true (required for Aiven)
+if os.getenv('DB_USE_SSL', 'false').lower() == 'true':
+    ssl_ca = os.getenv('DB_SSL_CA', os.path.join(os.path.dirname(__file__), 'ca.pem'))
+    db_config['ssl_ca'] = ssl_ca
+    db_config['ssl_verify_identity'] = True
 
 connection_pool = pooling.MySQLConnectionPool(
     pool_name="swaf_pool",
-    pool_size=5,  # Adjust size based on needs
+    pool_size=5,
     pool_reset_session=True,
     **db_config
 )

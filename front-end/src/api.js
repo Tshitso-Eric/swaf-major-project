@@ -1,10 +1,10 @@
 //API Helper
 import axios from 'axios';
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const axiosInstance = axios.create({
-  baseURL: API_URL,
+  baseURL: API_BASE_URL,
 });
 
 // Request interceptor to add the latest token to every request
@@ -22,7 +22,7 @@ axiosInstance.interceptors.request.use(
 );
 
 export const login = async (username, password) => {
-  const response = await axios.post(`${API_URL}/login`, { username, password });
+  const response = await axios.post(`${API_BASE_URL}/login`, { username, password });
   if (response.data.token) {
     localStorage.setItem('token', response.data.token);
   }
