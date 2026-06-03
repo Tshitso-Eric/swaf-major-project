@@ -1,26 +1,13 @@
 import React, { useEffect, useState, useContext } from 'react';
 import {
-  Box,
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  CssBaseline,
-  Typography,
-  Alert,
-  CircularProgress,
-  Toolbar,
-  Divider,
-  Chip,
-  IconButton,
-  useTheme,
+  Box, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
+  CssBaseline, Typography, Alert, CircularProgress, Divider, Chip,
+  IconButton, useTheme, AppBar, Toolbar, Avatar, Tooltip, Badge,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
-  Traffic as TrafficIcon,
   List as LogsIcon,
+  AdminPanelSettings as AdminIcon,
   Gavel as RulesIcon,
   Security as ThreatIcon,
   Settings as SettingsIcon,
@@ -28,10 +15,12 @@ import {
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   Refresh as RefreshIcon,
+  Shield as ShieldIcon,
+  Logout as LogoutIcon,
+  FiberManualRecord as LiveIcon,
 } from '@mui/icons-material';
 
 import DashboardHome from './DashboardHome';
-import LiveTraffic from './LiveTraffic';
 import FullLogs from './FullLogs';
 import AdminLogs from './AdminLogs';
 import Rules from './Rules';
@@ -42,279 +31,268 @@ import MLModelMonitor from './MLModelMonitor';
 import { getLogs, getModelInfo } from './api';
 import { ThemeContext } from './App';
 
-const drawerWidth = 240;
+const DRAWER_WIDTH = 260;
 
-export default function Dashboard() {
-  const [activeSection, setActiveSection] = useState('dashboard');
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState({
-    totalRequests: 0,
-    blocked: 0,
-    allowed: 0,
-    topThreats: [],
-  });
-  const [modelStats, setModelStats] = useState({
-    accuracy: 0,
-    predictions: 0,
-    threatsDetected: 0,
-    modelStatus: 'active'
-  });
+const menuItems = [
+  { id: 'dashboard', text: 'Overview',          icon: <DashboardIcon /> },
+  { id: 'logs',      text: 'Security Logs',     icon: <LogsIcon />,    badge: true },
+  { id: 'adminLogs', text: 'Admin Logs',        icon: <AdminIcon /> },
+  { id: 'rules',     text: 'Firewall Rules',    icon: <RulesIcon /> },
+  { id: 'threats',   text: 'Threat Intel',      icon: <ThreatIcon /> },
+  { id: 'model',     text: 'ML Models',         icon: <ModelIcon /> },
+  { id: 'settings',  text: 'Settings',          icon: <SettingsIcon /> },
+];
+
+export default function Dashboard({ onLogout }) {
+  const [active,     setActive]    = useState('dashboard');
+  const [logs,       setLogs]      = useState([]);
+  const [loading,    setLoading]   = useState(true);
+  const [refreshing, setRefreshing]= useState(false);
+  const [error,      setError]     = useState(null);
+  const [stats,      setStats]     = useState({ totalRequests:0, blocked:0, allowed:0, topThreats:[] });
+  const [modelStats, setModelStats]= useState({});
+  const [lastUpdate, setLastUpdate]= useState(null);
 
   const theme = useTheme();
   const { mode, toggleColorMode } = useContext(ThemeContext);
+  const isDark = mode === 'dark';
+
+  const sidebarBg   = isDark ? '#0f172a' : '#1e3a5f';
+  const sidebarText = 'rgba(255,255,255,0.85)';
 
   const fetchData = async () => {
     try {
-      if (!logs.length && !stats.totalRequests) {
-        setLoading(true);
-      }
+      if (!logs.length) setLoading(true);
       const data = await getLogs();
       const safeLogs = Array.isArray(data) ? data : [];
       setLogs(safeLogs);
 
-      const total = safeLogs.length;
-      const blockedCount = safeLogs.filter(log => log?.action === 'BLOCKED').length;
-      const allowedCount = total - blockedCount;
-
-      const threatCount = safeLogs.reduce((acc, log) => {
-        if (log?.threat_type) {
-          log.threat_type.split(',').forEach(t => {
-            const key = t.trim();
-            acc[key] = (acc[key] || 0) + 1;
+      const total       = safeLogs.length;
+      const blockedCount= safeLogs.filter(l => l?.action === 'BLOCKED').length;
+      const threatCount = safeLogs.reduce((acc, l) => {
+        if (l?.threat_type) {
+          l.threat_type.split(',').forEach(t => {
+            const k = t.trim();
+            acc[k] = (acc[k] || 0) + 1;
           });
         }
         return acc;
       }, {});
-
       const topThreats = Object.entries(threatCount)
         .map(([name, value]) => ({ name, value }))
         .sort((a, b) => b.value - a.value)
         .slice(0, 5);
 
-      setStats({ totalRequests: total, blocked: blockedCount, allowed: allowedCount, topThreats });
-      
-      // Fetch ML model stats from API
+      setStats({ totalRequests: total, blocked: blockedCount, allowed: total - blockedCount, topThreats });
+      setLastUpdate(new Date());
+
       try {
-        const modelData = await getModelInfo();
-        setModelStats(modelData);
-      } catch (modelErr) {
-        console.error('Failed to fetch model stats:', modelErr);
-      }
-      
+        const md = await getModelInfo();
+        setModelStats(md);
+      } catch {}
+
       setError(null);
     } catch (err) {
-      setError('Failed to load data. Please try again.');
-      console.error(err);
+      setError('Failed to load data. Check your connection.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    await fetchData();
-  };
-
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => fetchData(), 80000);
-    return () => clearInterval(interval);
+    const iv = setInterval(fetchData, 60000);
+    return () => clearInterval(iv);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleRefresh = () => { setRefreshing(true); fetchData(); };
+
   const getThreatChip = (threat) => {
-    if (!threat) return <Chip label="None" color="success" size="small" />;
-    const type = threat.toLowerCase();
+    if (!threat || threat === 'None') return <Chip label="Safe" color="success" size="small" />;
+    const t = threat.toLowerCase();
     let color = 'default';
-    if (type.includes('sqli') || type.includes('xss') || type.includes('rfi')) color = 'error';
-    if (type.includes('csrf') || type.includes('ddos')) color = 'warning';
+    if (t.includes('sql') || t.includes('xss') || t.includes('lfi')) color = 'error';
+    else if (t.includes('csrf') || t.includes('ssrf') || t.includes('xxe')) color = 'warning';
+    else if (t.includes('bot') || t.includes('rate')) color = 'secondary';
     return <Chip label={threat} color={color} size="small" />;
   };
-
-  const handleNavigation = (section) => {
-    setActiveSection(section);
-  };
-
-  const menuItems = [
-    { id: 'dashboard', text: 'Dashboard', icon: <DashboardIcon /> },
-    { id: 'logs',      text: 'Logs',      icon: <LogsIcon /> },
-    { id: 'adminLogs', text: 'Admin Logs', icon: <LogsIcon/>},
-    { id: 'rules',     text: 'Rules',     icon: <RulesIcon /> },
-    { id: 'threats',   text: 'Threats',   icon: <ThreatIcon /> },
-    { id: 'model',     text: ' Models', icon: <ModelIcon /> },
-    { id: 'settings',  text: 'Settings',  icon: <SettingsIcon /> },
-  ];
 
   const renderContent = () => {
     if (loading && !refreshing) {
       return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-          <CircularProgress size={60} />
+        <Box sx={{ display:'flex', justifyContent:'center', alignItems:'center', height:'60vh', flexDirection:'column', gap:2 }}>
+          <CircularProgress size={56} thickness={4} />
+          <Typography color="text.secondary">Loading security data…</Typography>
         </Box>
       );
     }
-
-    switch (activeSection) {
-      case 'dashboard':
-        return (
-          <>
-            <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
-              Dashboard Overview
-            </Typography>
-            <DashboardHome
-              stats={stats}
-              logs={logs}
-              getThreatChip={getThreatChip}
-              onNavigate={handleNavigation}
-              modelStats={modelStats}
-            />
-          </>
-        );
-
-      case 'traffic':
-        return (
-          <>
-            <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
-              Traffic Monitoring
-            </Typography>
-            <LiveTraffic logs={logs} getThreatChip={getThreatChip} />
-          </>
-        );
-
-      case 'logs':
-        return (
-          <>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h4" sx={{ fontWeight: 700 }}>
-                Security Logs
-              </Typography>
-              <Box>
-                <IconButton aria-label="refresh logs" onClick={handleRefresh} disabled={refreshing} sx={{ mr: 1 }}>
-                  <RefreshIcon />
-                </IconButton>
-                {refreshing && <CircularProgress size={20} />}
-              </Box>
-            </Box>
-            <FullLogs logs={logs} getThreatChip={getThreatChip} />
-          </>
-        );
-
-      case 'adminLogs':
-        return (
-          <>
-            <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
-              Admin Logs
-            </Typography>
-            <AdminLogs/>
-          </>
-        );
-
-      case 'rules':
-        return (
-          <>
-            <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
-              Firewall Rules
-            </Typography>
-            <Rules />
-          </>
-        );
-
-      case 'threats':
-        return (
-          <>
-            <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
-              Threat Intelligence
-            </Typography>
-            <ThreatIntelligence />
-          </>
-        );
-
-      case 'model':
-        return <MLModelMonitor />;
-
-      case 'settings':
-        return (
-          <>
-            <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
-              Settings
-            </Typography>
-            <Settings />
-          </>
-        );
-
-      default:
-        return <Typography>Section not found</Typography>;
+    switch (active) {
+      case 'dashboard':  return <DashboardHome stats={stats} logs={logs} getThreatChip={getThreatChip} onNavigate={setActive} modelStats={modelStats} />;
+      case 'logs':       return <FullLogs logs={logs} getThreatChip={getThreatChip} />;
+      case 'adminLogs':  return <AdminLogs />;
+      case 'rules':      return <Rules />;
+      case 'threats':    return <ThreatIntelligence />;
+      case 'model':      return <MLModelMonitor />;
+      case 'settings':   return <Settings />;
+      default:           return null;
     }
   };
 
+  const pageTitle = menuItems.find(m => m.id === active)?.text || 'Dashboard';
+
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display:'flex', minHeight:'100vh' }}>
       <CssBaseline />
 
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: {
-            width: drawerWidth,
-            boxSizing: 'border-box',
-            backgroundColor: theme.palette.mode === 'light' ? '#5d4037' : '#2c2c2c',
-            color: 'white',
-          },
-        }}
-      >
-        <Toolbar>
-          <Typography variant="h6" sx={{ fontWeight: 700, flexGrow: 1 }}>
-            SWAF
-          </Typography>
-          <IconButton onClick={toggleColorMode} sx={{ color: 'white' }}>
-            {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
-          </IconButton>
-        </Toolbar>
-        <Divider sx={{ backgroundColor: 'rgba(255,255,255,0.2)' }} />
-        <List>
-          {menuItems.map((item) => (
-            <ListItem key={item.id} disablePadding>
-              <ListItemButton
-                selected={activeSection === item.id}
-                onClick={() => setActiveSection(item.id)}
-                sx={{
-                  '&.Mui-selected': { backgroundColor: 'rgba(25,118,210,0.25)' },
-                  '&:hover': { backgroundColor: 'rgba(255,255,255,0.1)' },
-                }}
-              >
-                <ListItemIcon sx={{ color: activeSection === item.id ? '#90caf9' : 'white' }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText primary={item.text} />
-              </ListItemButton>
-            </ListItem>
-          ))}
+      {/* ── Sidebar ── */}
+      <Drawer variant="permanent" sx={{
+        width: DRAWER_WIDTH,
+        flexShrink: 0,
+        '& .MuiDrawer-paper': {
+          width: DRAWER_WIDTH,
+          boxSizing: 'border-box',
+          backgroundColor: sidebarBg,
+          color: sidebarText,
+          border: 'none',
+          backgroundImage: 'none',
+        },
+      }}>
+        {/* Brand */}
+        <Box sx={{ px: 3, py: 3, display:'flex', alignItems:'center', gap: 1.5 }}>
+          <Box sx={{
+            p: 1, borderRadius: 2,
+            background: 'linear-gradient(135deg, #1d4ed8, #06b6d4)',
+            display: 'flex',
+          }}>
+            <ShieldIcon sx={{ fontSize: 22, color:'white' }} />
+          </Box>
+          <Box>
+            <Typography sx={{ fontWeight:800, fontSize:'1.1rem', color:'white', lineHeight:1.1 }}>SWAF</Typography>
+            <Typography sx={{ fontSize:'0.65rem', color:'rgba(255,255,255,0.45)', letterSpacing:'0.08em' }}>ADMIN DASHBOARD</Typography>
+          </Box>
+        </Box>
+
+        {/* Live status */}
+        <Box sx={{ mx:2, mb:2, px:2, py:1, borderRadius:2, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.2)', display:'flex', alignItems:'center', gap:1 }}>
+          <LiveIcon sx={{ fontSize:8, color:'#10b981', animation:'pulse 2s infinite' }} />
+          <Typography variant="caption" sx={{ color:'#10b981', fontWeight:600 }}>LIVE PROTECTION ACTIVE</Typography>
+        </Box>
+
+        <Divider sx={{ borderColor:'rgba(255,255,255,0.07)', mx:2 }} />
+
+        {/* Nav */}
+        <List sx={{ px:1, mt:1, flex:1 }}>
+          {menuItems.map(item => {
+            const isActive = active === item.id;
+            return (
+              <ListItem key={item.id} disablePadding sx={{ mb: 0.5 }}>
+                <ListItemButton
+                  onClick={() => setActive(item.id)}
+                  sx={{
+                    borderRadius: 2,
+                    py: 1.2,
+                    background: isActive ? 'linear-gradient(135deg, rgba(59,130,246,0.25), rgba(6,182,212,0.15))' : 'transparent',
+                    border: isActive ? '1px solid rgba(59,130,246,0.3)' : '1px solid transparent',
+                    '&:hover': { background:'rgba(255,255,255,0.07)' },
+                  }}
+                >
+                  <ListItemIcon sx={{ color: isActive ? '#60a5fa' : 'rgba(255,255,255,0.5)', minWidth: 38 }}>
+                    {item.badge && stats.blocked > 0
+                      ? <Badge badgeContent={stats.blocked} color="error" max={99}>{item.icon}</Badge>
+                      : item.icon
+                    }
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.text}
+                    primaryTypographyProps={{
+                      fontSize: '0.875rem',
+                      fontWeight: isActive ? 700 : 400,
+                      color: isActive ? 'white' : 'rgba(255,255,255,0.65)',
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            );
+          })}
         </List>
+
+        {/* Bottom: stats summary */}
+        <Box sx={{ m:2, p:2, borderRadius:2, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)' }}>
+          <Typography variant="caption" sx={{ color:'rgba(255,255,255,0.4)', display:'block', mb:1 }}>SESSION STATS</Typography>
+          <Box sx={{ display:'flex', justifyContent:'space-between' }}>
+            <Box sx={{ textAlign:'center' }}>
+              <Typography sx={{ color:'#10b981', fontWeight:700, fontSize:'1rem' }}>{stats.allowed}</Typography>
+              <Typography variant="caption" sx={{ color:'rgba(255,255,255,0.4)' }}>Allowed</Typography>
+            </Box>
+            <Box sx={{ textAlign:'center' }}>
+              <Typography sx={{ color:'#ef4444', fontWeight:700, fontSize:'1rem' }}>{stats.blocked}</Typography>
+              <Typography variant="caption" sx={{ color:'rgba(255,255,255,0.4)' }}>Blocked</Typography>
+            </Box>
+            <Box sx={{ textAlign:'center' }}>
+              <Typography sx={{ color:'#60a5fa', fontWeight:700, fontSize:'1rem' }}>{stats.totalRequests}</Typography>
+              <Typography variant="caption" sx={{ color:'rgba(255,255,255,0.4)' }}>Total</Typography>
+            </Box>
+          </Box>
+        </Box>
       </Drawer>
 
-      <Box component="main" sx={{ flexGrow: 1, p: 4, bgcolor: theme.palette.background.default }}>
-        <Toolbar sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <IconButton 
-            onClick={handleRefresh} 
-            disabled={refreshing}
-            sx={{ 
-              color: theme.palette.mode === 'light' ? '#5d4037' : '#90caf9',
-              '&:hover': { backgroundColor: 'rgba(93, 64, 55, 0.1)' }
-            }}
-          >
-            {refreshing ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
-          </IconButton>
-        </Toolbar>
+      {/* ── Main ── */}
+      <Box component="main" sx={{ flexGrow:1, display:'flex', flexDirection:'column', bgcolor:'background.default', minHeight:'100vh' }}>
+        {/* Top AppBar */}
+        <AppBar position="static" elevation={0} sx={{
+          bgcolor: 'background.paper',
+          borderBottom: `1px solid ${theme.palette.divider}`,
+          backgroundImage: 'none',
+        }}>
+          <Toolbar sx={{ gap:1 }}>
+            <Box sx={{ flex:1 }}>
+              <Typography variant="h6" sx={{ fontWeight:700, color:'text.primary' }}>
+                {pageTitle}
+              </Typography>
+              {lastUpdate && (
+                <Typography variant="caption" color="text.secondary">
+                  Last updated {lastUpdate.toLocaleTimeString()}
+                </Typography>
+              )}
+            </Box>
 
-        {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+            <Tooltip title="Refresh data">
+              <IconButton onClick={handleRefresh} disabled={refreshing}>
+                {refreshing ? <CircularProgress size={20} /> : <RefreshIcon />}
+              </IconButton>
+            </Tooltip>
 
-        {renderContent()}
+            <Tooltip title={`Switch to ${mode === 'light' ? 'dark' : 'light'} mode`}>
+              <IconButton onClick={toggleColorMode}>
+                {mode === 'light' ? <DarkModeIcon /> : <LightModeIcon />}
+              </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Logout">
+              <IconButton onClick={onLogout} color="error">
+                <LogoutIcon />
+              </IconButton>
+            </Tooltip>
+
+            <Avatar sx={{ width:34, height:34, bgcolor:'#1d4ed8', fontSize:'0.85rem', fontWeight:700 }}>A</Avatar>
+          </Toolbar>
+        </AppBar>
+
+        {/* Content */}
+        <Box sx={{ flex:1, p: { xs:2, sm:3, md:4 }, overflow:'auto' }}>
+          {error && <Alert severity="error" sx={{ mb:3 }} onClose={() => setError(null)}>{error}</Alert>}
+          {renderContent()}
+        </Box>
       </Box>
+
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </Box>
   );
 }

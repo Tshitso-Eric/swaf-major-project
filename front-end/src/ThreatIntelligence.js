@@ -1,250 +1,191 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
 import {
-  Paper,
-  Typography,
-  Box,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  Grid,
-  Card,
-  CardContent,
-  LinearProgress,
-  Alert,
-  CircularProgress,
-} from "@mui/material";
+  Paper, Typography, Box, Table, TableBody, TableCell, TableHead, TableRow,
+  Grid, Card, CardContent, LinearProgress, CircularProgress, Chip, useTheme,
+} from '@mui/material';
 import {
-  Warning as WarningIcon,
-  Security as SecurityIcon,
-  Block as BlockIcon,
-} from "@mui/icons-material";
+  Warning as WarningIcon, Security as SecurityIcon, Block as BlockIcon,
+  Router as IPIcon,
+} from '@mui/icons-material';
+import {
+  PieChart, Pie, Cell, Tooltip as RechartTooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { getThreatIntelligence } from './api';
 
+const COLORS = ['#ef4444','#f59e0b','#8b5cf6','#06b6d4','#10b981','#f97316','#ec4899','#64748b'];
+
 export default function ThreatIntelligence() {
-  const [data, setData] = useState(null);
+  const theme  = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchThreatData = async () => {
+    const fetch = async () => {
       try {
-        if (data === null) {
-          setLoading(true);
-        }
-        
-        const result = await getThreatIntelligence();
-        setData(result);
-        setError(null);
-      } catch (err) {
-        console.error("Error fetching threat intelligence:", err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+        const r = await getThreatIntelligence();
+        setData(r);
+      } catch {}
+      finally { setLoading(false); }
     };
-
-    fetchThreatData();
-    
-    const interval = setInterval(fetchThreatData, 30000);
-    return () => clearInterval(interval);
+    fetch();
+    const iv = setInterval(fetch, 30000);
+    return () => clearInterval(iv);
   }, []);
 
   if (loading) {
     return (
-      <Box sx={{ p: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-        <CircularProgress size={60} />
-        <Typography sx={{ ml: 2 }}>Loading threat intelligence data...</Typography>
+      <Box sx={{ display:'flex', justifyContent:'center', alignItems:'center', height:'400px', flexDirection:'column', gap:2 }}>
+        <CircularProgress size={56} thickness={4} />
+        <Typography color="text.secondary">Loading threat intelligence…</Typography>
       </Box>
     );
   }
 
-  const totalThreats = data.topThreats?.reduce((sum, threat) => sum + threat.value, 0) || 0;
-  const threatRate = data.stats?.total > 0 
-    ? ((data.stats.blocked / data.stats.total) * 100).toFixed(1) 
-    : 0;
+  if (!data) return null;
 
-  const getThreatColor = (threatType) => {
-    const type = threatType?.toLowerCase() || '';
-    if (type.includes('sqli') || type.includes('sql')) return '#d32f2f';
-    if (type.includes('xss')) return '#f57c00';
-    if (type.includes('rfi')) return '#7b1fa2';
-    if (type.includes('csrf')) return '#0097a7';
-    if (type.includes('ddos')) return '#c2185b';
-    return '#757575';
-  };
+  const totalThreats = data.topThreats?.reduce((s, t) => s + t.value, 0) || 1;
+  const threatRate   = data.stats?.total > 0
+    ? ((data.stats.blocked / data.stats.total) * 100).toFixed(1) : 0;
 
-  
-
-  const actualThreats = data.topThreats?.filter(t => t.name !== 'None') || [];
+  const actualThreats = (data.topThreats || []).filter(t => t.name !== 'None');
+  const pieData       = actualThreats.slice(0, 6);
 
   return (
-    <Box sx={{ p: 4 }}>
-      {/* Summary Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ borderRadius: 2 }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <SecurityIcon sx={{ color: '#1976d2', mr: 1, fontSize: 20 }} />
-                <Typography variant="caption" color="text.secondary">
-                  Threat Detection Rate
-                </Typography>
+    <Box>
+      {/* Stat cards */}
+      <Grid container spacing={3} sx={{ mb:4 }}>
+        {[
+          { label:'Detection Rate',    value:`${threatRate}%`,  icon:<SecurityIcon />, color:'#3b82f6', sub:'of traffic was threats' },
+          { label:'Threats Blocked',   value:data.stats?.blocked?.toLocaleString()||0, icon:<BlockIcon />, color:'#ef4444', sub:`of ${data.stats?.total?.toLocaleString()||0} total requests` },
+          { label:'Unique Attack Types', value:actualThreats.length, icon:<WarningIcon />, color:'#f59e0b', sub:'different attack vectors' },
+          { label:'Top Attacker IPs',  value:data.topIPs?.length || 0, icon:<IPIcon />, color:'#8b5cf6', sub:'distinct source IPs' },
+        ].map(card => (
+          <Grid item xs={12} sm={6} md={3} key={card.label}>
+            <Card elevation={0} sx={{ border:`1px solid ${theme.palette.divider}`, borderTop:`3px solid ${card.color}` }}>
+              <CardContent sx={{ p:3 }}>
+                <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', mb:2 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight:600, textTransform:'uppercase', letterSpacing:'0.08em' }}>
+                    {card.label}
+                  </Typography>
+                  <Box sx={{ p:0.8, borderRadius:2, bgcolor:`${card.color}18` }}>
+                    {React.cloneElement(card.icon, { sx:{ fontSize:20, color:card.color } })}
+                  </Box>
+                </Box>
+                <Typography variant="h3" sx={{ fontWeight:800, color:card.color, lineHeight:1 }}>{card.value}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mt:0.5, display:'block' }}>{card.sub}</Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      <Grid container spacing={3} sx={{ mb:4 }}>
+        {/* Pie chart */}
+        <Grid item xs={12} md={5}>
+          <Card elevation={0} sx={{ border:`1px solid ${theme.palette.divider}`, height:'100%' }}>
+            <CardContent sx={{ p:3 }}>
+              <Typography variant="h6" sx={{ mb:0.5 }}>Attack Distribution</Typography>
+              <Typography variant="caption" color="text.secondary">Proportion by threat type</Typography>
+              <Box sx={{ height:280, mt:2 }}>
+                {pieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} dataKey="value" nameKey="name"
+                        cx="50%" cy="50%" outerRadius={90} innerRadius={40}>
+                        {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <RechartTooltip contentStyle={{
+                        backgroundColor: theme.palette.background.paper,
+                        border:`1px solid ${theme.palette.divider}`, borderRadius:8,
+                      }} />
+                      <Legend formatter={v => <span style={{ color: theme.palette.text.secondary, fontSize:'0.8rem' }}>{v}</span>} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <Box sx={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
+                    <Typography color="text.secondary">No threat data yet</Typography>
+                  </Box>
+                )}
               </Box>
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#1976d2' }}>
-                {threatRate}%
-              </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={parseFloat(threatRate)} 
-                sx={{ mt: 1, height: 6, borderRadius: 3 }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                of all requests were threats
-              </Typography>
             </CardContent>
           </Card>
         </Grid>
-        
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ borderRadius: 2 }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <BlockIcon sx={{ color: '#d32f2f', mr: 1, fontSize: 20 }} />
-                <Typography variant="caption" color="text.secondary">
-                  Total Threats Blocked
-                </Typography>
+
+        {/* Top IPs */}
+        <Grid item xs={12} md={7}>
+          <Card elevation={0} sx={{ border:`1px solid ${theme.palette.divider}`, height:'100%' }}>
+            <CardContent sx={{ p:3 }}>
+              <Typography variant="h6" sx={{ mb:0.5 }}>Top Attacking IPs</Typography>
+              <Typography variant="caption" color="text.secondary">Source IPs with most blocked requests</Typography>
+              <Box sx={{ mt:3 }}>
+                {data.topIPs?.length > 0 ? data.topIPs.map((ip, i) => (
+                  <Box key={ip.source_ip} sx={{ mb:2 }}>
+                    <Box sx={{ display:'flex', justifyContent:'space-between', mb:0.5 }}>
+                      <Box sx={{ display:'flex', alignItems:'center', gap:1 }}>
+                        <Chip label={`#${i+1}`} size="small" sx={{ height:18, fontSize:'0.65rem', fontWeight:700 }} />
+                        <Typography sx={{ fontFamily:'monospace', fontSize:'0.85rem', fontWeight:600 }}>{ip.source_ip}</Typography>
+                      </Box>
+                      <Typography variant="body2" sx={{ fontWeight:700, color:'#ef4444' }}>{ip.count} requests</Typography>
+                    </Box>
+                    <LinearProgress variant="determinate"
+                      value={Math.min((ip.count / (data.topIPs[0].count || 1)) * 100, 100)}
+                      sx={{ height:6, borderRadius:3, bgcolor:isDark?'rgba(239,68,68,0.1)':'#fee2e2',
+                        '& .MuiLinearProgress-bar': { bgcolor:'#ef4444', borderRadius:3 } }} />
+                  </Box>
+                )) : (
+                  <Typography color="text.secondary" variant="body2">No attacker IP data yet</Typography>
+                )}
               </Box>
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#d32f2f' }}>
-                {data.stats?.blocked?.toLocaleString() || 0}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                out of {data.stats?.total?.toLocaleString() || 0} total requests
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        
-        <Grid item xs={12} sm={6} md={4}>
-          <Card elevation={2} sx={{ borderRadius: 2 }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <WarningIcon sx={{ color: '#f57c00', mr: 1, fontSize: 20 }} />
-                <Typography variant="caption" color="text.secondary">
-                  Unique Threat Types
-                </Typography>
-              </Box>
-              <Typography variant="h3" sx={{ fontWeight: 700, color: '#f57c00' }}>
-                {actualThreats.length}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                different attack vectors detected
-              </Typography>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* Threat Types Distribution Table */}
-      <Paper
-        elevation={3}
-        sx={{
-          borderRadius: 3,
-          overflow: "hidden"
-        }}
-      >
-        <Box sx={{ p: 2.5, borderBottom: "1px solid #e0e0e0", backgroundColor: '#fafafa' }}>
-          <Typography variant="h6" fontWeight="600">
-            <WarningIcon sx={{ fontSize: 20, verticalAlign: 'middle', mr: 1, color: '#f57c00' }} />
-            Threat Types Distribution
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Classification of detected attack patterns
-          </Typography>
+      {/* Threat table */}
+      <Paper elevation={0} sx={{ border:`1px solid ${theme.palette.divider}` }}>
+        <Box sx={{ p:3, borderBottom:`1px solid ${theme.palette.divider}` }}>
+          <Typography variant="h6">Threat Type Breakdown</Typography>
+          <Typography variant="caption" color="text.secondary">All detected attack patterns with frequency</Typography>
         </Box>
-
-        <Box sx={{ overflow: "auto" }}>
-          <Table stickyHeader>
-            <TableHead>
-              <TableRow sx={{ backgroundColor: '#f5f5f5' }}>
-                <TableCell sx={{ fontWeight: 600 }}>Threat Type</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600 }}>Count</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 600 }}>Percentage</TableCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
-              {data.topThreats && data.topThreats.map((threat, i) => (
-                <TableRow key={i} hover sx={{ '&:hover': { backgroundColor: '#fafafa' } }}>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <WarningIcon 
-                        sx={{ 
-                          fontSize: 18, 
-                          color: threat.name === 'None' ? '#9e9e9e' : getThreatColor(threat.name), 
-                          mr: 1.5 
-                        }} 
-                      />
-                      <Typography 
-                        sx={{ 
-                          fontWeight: threat.name !== 'None' ? 500 : 400,
-                          color: threat.name !== 'None' ? getThreatColor(threat.name) : '#5d4037'
-                        }}
-                      >
-                        {threat.name === 'None' ? 'Safe Traffic' : threat.name}
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography sx={{ fontWeight: 600 }}>
-                      {threat.value}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 1.5 }}>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={(threat.value / totalThreats) * 100} 
-                        sx={{ 
-                          width: 80, 
-                          height: 6, 
-                          borderRadius: 3,
-                          backgroundColor: threat.name === 'None' ? '#e8f5e9' : '#ffebee',
-                          '& .MuiLinearProgress-bar': {
-                            backgroundColor: threat.name === 'None' ? '#4caf50' : getThreatColor(threat.name)
-                          }
-                        }}
-                      />
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace', minWidth: 45 }}>
-                        {((threat.value / totalThreats) * 100).toFixed(1)}%
-                      </Typography>
-                    </Box>
-                  </TableCell>
-                </TableRow>
+        <Table>
+          <TableHead>
+            <TableRow>
+              {['Threat Type','Count','Share','Bar'].map(h => (
+                <TableCell key={h} sx={{ fontWeight:700, fontSize:'0.75rem', textTransform:'uppercase',
+                  letterSpacing:'0.06em', bgcolor: isDark?'#1e293b':'#f8fafc' }}>{h}</TableCell>
               ))}
-              {(!data.topThreats || data.topThreats.length === 0) && (
-                <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 6 }}>
-                    <Typography color="text.secondary">
-                      No threat data available yet
-                    </Typography>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {(data.topThreats || []).map((threat, i) => {
+              const pct = ((threat.value / totalThreats) * 100).toFixed(1);
+              const color = threat.name === 'None' ? '#10b981' : COLORS[i % COLORS.length];
+              return (
+                <TableRow key={i} hover>
+                  <TableCell>
+                    <Chip label={threat.name === 'None' ? 'Safe Traffic' : threat.name}
+                      size="small" sx={{ bgcolor:`${color}18`, color, border:`1px solid ${color}40`, fontWeight:600 }} />
+                  </TableCell>
+                  <TableCell sx={{ fontWeight:700 }}>{threat.value.toLocaleString()}</TableCell>
+                  <TableCell sx={{ fontFamily:'monospace', fontWeight:600 }}>{pct}%</TableCell>
+                  <TableCell sx={{ width:160 }}>
+                    <LinearProgress variant="determinate" value={parseFloat(pct)}
+                      sx={{ height:6, borderRadius:3, bgcolor:`${color}15`,
+                        '& .MuiLinearProgress-bar': { bgcolor:color, borderRadius:3 } }} />
                   </TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </Box>
+              );
+            })}
+            {(!data.topThreats || data.topThreats.length === 0) && (
+              <TableRow>
+                <TableCell colSpan={4} align="center" sx={{ py:5, color:'text.secondary' }}>No threat data available</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </Paper>
-
-      {/* Summary Note */}
-      <Box sx={{ mt: 3, textAlign: 'center' }}>
-        <Typography variant="caption" color="text.secondary">
-          Total requests analyzed: {data.stats?.total || 0} | 
-          Blocked: {data.stats?.blocked || 0} | 
-          Allowed: {data.stats?.allowed || 0}
-        </Typography>
-      </Box>
     </Box>
   );
 }
