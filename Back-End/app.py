@@ -27,10 +27,16 @@ load_dotenv()
 app = FastAPI(title="SWAF API", version="1.0.0")
 
 # ─── CORS ────────────────────────────────────────────────────────────────────
-_origins = ["http://localhost:3000", "http://localhost:5000", "https://eloan-system-api.onrender.com"]
-_extra = os.getenv("FRONTEND_URL", "")
-if _extra and _extra not in _origins:
-    _origins.append(_extra)
+_origins = [
+    "http://localhost:3000",
+    "http://localhost:5000",
+    "http://localhost:8080",
+    "https://eloan-system-api.onrender.com",  # eLoan frontend
+]
+for _env_key in ("FRONTEND_URL", "ELOAN_URL"):
+    _val = os.getenv(_env_key, "")
+    if _val and _val not in _origins:
+        _origins.append(_val)
 
 app.add_middleware(
     CORSMiddleware,
