@@ -102,7 +102,7 @@ export default function Dashboard({ onLogout }) {
 
   useEffect(() => {
     fetchData();
-    const iv = setInterval(fetchData, 60000);
+    const iv = setInterval(fetchData, 15000); // refresh every 15 seconds
     return () => clearInterval(iv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -30,7 +30,7 @@ export default function ThreatIntelligence() {
       finally { setLoading(false); }
     };
     fetch();
-    const iv = setInterval(fetch, 30000);
+    const iv = setInterval(fetch, 15000);
     return () => clearInterval(iv);
   }, []);
 
