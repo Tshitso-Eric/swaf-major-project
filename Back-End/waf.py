@@ -168,13 +168,27 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
 
     # Prepare data
     body_bytes = await request.body()
-    body_str = body_bytes.decode("utf-8", errors="ignore")
+    body_str   = body_bytes.decode("utf-8", errors="ignore")
     headers_dict = dict(request.headers)
-    headers_str = json.dumps(headers_dict)
-    
-    # Use path+query (not scheme+host) to avoid false-positive SSRF matches on the request's own URL
-    path_and_query = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-    inspect_text = f"{path_and_query} {headers_str} {body_str}"
+    headers_str  = json.dumps(headers_dict)
+
+    # Only inspect headers that can carry attacker-controlled values.
+    # Standard browser headers like Accept, Accept-Encoding, Host are safe
+    # and cause false positives (e.g. Accept: */*  triggers SQL comment rule).
+    _INSPECT_HEADERS = {
+        "user-agent", "referer", "x-forwarded-for", "x-real-ip",
+        "cookie", "x-custom-header", "x-api-key",
+    }
+    inspectable_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() in _INSPECT_HEADERS
+    }
+
+    # URL-decode the query string so patterns like \s+ match UNION+SELECT
+    from urllib.parse import unquote_plus
+    decoded_query = unquote_plus(request.url.query) if request.url.query else ""
+    path_and_query = request.url.path + (f"?{decoded_query}" if decoded_query else "")
+    inspect_text   = f"{path_and_query} {json.dumps(inspectable_headers)} {body_str}"
     
     # Detect
     action, threat_types, details = await hybrid_detection(request, inspect_text, body_str, headers_str, rules)
