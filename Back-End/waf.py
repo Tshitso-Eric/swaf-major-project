@@ -43,6 +43,13 @@ def is_rate_limited(ip: str) -> bool:
         bucket.append(now)
         return False
 
+def invalidate_rules_cache():
+    """Call this after any rule add/edit/delete so changes take effect immediately."""
+    global RULES_CACHE, LAST_LOAD
+    RULES_CACHE = None
+    LAST_LOAD   = 0.0
+
+
 def get_ml_engine():
     global ML_ENGINE
     if ML_ENGINE is None:
@@ -123,6 +130,13 @@ async def hybrid_detection(request: Request, inspect_text: str, body_str: str, h
         return "BLOCKED", ml_threat, f"ML Detection: {ml_threat} (Score: {ml_score:.4f})"
     
     return "ALLOWED", None, None
+
+
+# Paths served by the SWAF API itself — skip WAF inspection for these
+_SWAF_API_PREFIXES = (
+    "/login", "/logs", "/api/", "/docs", "/openapi",
+)
+
 
 async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str]]:
     client_ip = request.client.host

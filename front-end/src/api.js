@@ -29,6 +29,11 @@ export const login = async (username, password) => {
   return response.data;
 };
 
+export const getDashboardStats = async () => {
+  const response = await axiosInstance.get('/api/dashboard-stats');
+  return response.data;
+};
+
 export const getLogs = async () => {
   const response = await axiosInstance.get('/logs');
   return response.data;
