@@ -361,7 +361,7 @@ async def update_rule(rule_id: int, request: Request, _: dict = Depends(require_
 async def get_waf_settings(_: dict = Depends(require_admin)):
     from waf import RATE_LIMIT_MAX_REQUESTS, RATE_LIMIT_WINDOW_SECONDS
     return {
-        "target_app_url":          os.getenv("TARGET_SERVER", "http://localhost:8080"),
+        "target_app_url":          os.getenv("TARGET_SERVER", "https://eloan-system-api.onrender.com"),
         "waf_mode":                os.getenv("WAF_MODE", "block"),
         "listening_port":          5000,
         "enable_logging":          True,
