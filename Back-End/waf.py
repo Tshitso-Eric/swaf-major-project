@@ -15,7 +15,7 @@ import time
 import threading
 
 # The protected backend web application
-TARGET_URL = os.getenv("TARGET_SERVER", "http://localhost:8080").rstrip("/")
+TARGET_URL = os.getenv("TARGET_SERVER", "https://eloan-system-api.onrender.com").rstrip("/")
 
 # Initialize ML Model
 ML_ENGINE = None
