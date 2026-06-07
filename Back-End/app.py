@@ -32,6 +32,7 @@ _origins = [
     "http://localhost:5000",
     "http://localhost:8080",
     "https://eloan-system-api.onrender.com",  # eLoan frontend
+    "https://swaf-major-project.vercel.app",  # SWAF React dashboard
 ]
 for _env_key in ("FRONTEND_URL", "ELOAN_URL"):
     _val = os.getenv(_env_key, "")
