@@ -18,6 +18,7 @@ import {
   Shield as ShieldIcon,
   Logout as LogoutIcon,
   FiberManualRecord as LiveIcon,
+  Router as NetworkIcon,
 } from '@mui/icons-material';
 
 import DashboardHome from './DashboardHome';
@@ -27,6 +28,7 @@ import Rules from './Rules';
 import ThreatIntelligence from './ThreatIntelligence';
 import Settings from './Settings';
 import MLModelMonitor from './MLModelMonitor';
+import NetworkControls from './NetworkControls';
 
 import { getLogs, getModelInfo } from './api';
 import { ThemeContext } from './App';
@@ -38,6 +40,7 @@ const menuItems = [
   { id: 'logs',      text: 'Security Logs',     icon: <LogsIcon />,    badge: true },
   { id: 'adminLogs', text: 'Admin Logs',        icon: <AdminIcon /> },
   { id: 'rules',     text: 'Firewall Rules',    icon: <RulesIcon /> },
+  { id: 'network',   text: 'Network Controls',  icon: <NetworkIcon /> },
   { id: 'threats',   text: 'Threat Intel',      icon: <ThreatIcon /> },
   { id: 'model',     text: 'ML Models',         icon: <ModelIcon /> },
   { id: 'settings',  text: 'Settings',          icon: <SettingsIcon /> },
@@ -133,6 +136,7 @@ export default function Dashboard({ onLogout }) {
       case 'logs':       return <FullLogs logs={logs} getThreatChip={getThreatChip} />;
       case 'adminLogs':  return <AdminLogs />;
       case 'rules':      return <Rules />;
+      case 'network':    return <NetworkControls />;
       case 'threats':    return <ThreatIntelligence />;
       case 'model':      return <MLModelMonitor />;
       case 'settings':   return <Settings />;

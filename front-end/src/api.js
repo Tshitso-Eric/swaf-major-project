@@ -107,3 +107,19 @@ export const getModelMetrics = async () => {
   const response = await axiosInstance.get('/api/ml/model-metrics');
   return response.data;
 };
+
+// ── Network Port Controls ─────────────────────────────────────────────────────
+export const getPortStatus = async () => {
+  const response = await axiosInstance.get('/api/network/ports');
+  return response.data;
+};
+
+export const blockPort = async (port) => {
+  const response = await axiosInstance.post(`/api/network/ports/${port}/block`);
+  return response.data;
+};
+
+export const unblockPort = async (port) => {
+  const response = await axiosInstance.post(`/api/network/ports/${port}/unblock`);
+  return response.data;
+};
