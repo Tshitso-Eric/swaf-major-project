@@ -566,7 +566,7 @@ def _apply_https_nginx_block(block: bool):
         subprocess.run(["sudo", "touch", HTTPS_BLOCK_FLAG], check=True)
     else:
         subprocess.run(["sudo", "rm", "-f", HTTPS_BLOCK_FLAG], check=True)
-    subprocess.run(["sudo", "systemctl", "reload", "nginx"], check=True)
+    subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
 
 def _apply_port_block(port: int, block: bool):
     if port == 443:
