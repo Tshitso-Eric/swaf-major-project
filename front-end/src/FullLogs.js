@@ -95,7 +95,7 @@ export default function FullLogs({ logs = [], getThreatChip }) {
                   }}>
                     <TableCell sx={{ color:'text.secondary', fontFamily:'monospace', fontSize:'0.75rem' }}>{log.id}</TableCell>
                     <TableCell sx={{ whiteSpace:'nowrap', fontSize:'0.8rem' }}>
-                      {new Date(log.timestamp).toLocaleString()}
+                      {new Date(log.timestamp).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })}
                     </TableCell>
                     <TableCell sx={{ fontFamily:'monospace', fontSize:'0.8rem', fontWeight:500 }}>
                       {log.source_ip || '—'}

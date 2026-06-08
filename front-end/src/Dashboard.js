@@ -60,9 +60,9 @@ export default function Dashboard({ onLogout }) {
   const sidebarBg   = isDark ? '#0f172a' : '#1e3a5f';
   const sidebarText = 'rgba(255,255,255,0.85)';
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-      if (!logs.length) setLoading(true);
+      if (!logs.length && !silent) setLoading(true);
       const data = await getLogs();
       const safeLogs = Array.isArray(data) ? data : [];
       setLogs(safeLogs);
@@ -102,12 +102,12 @@ export default function Dashboard({ onLogout }) {
 
   useEffect(() => {
     fetchData();
-    const iv = setInterval(fetchData, 15000); // refresh every 15 seconds
+    const iv = setInterval(() => fetchData(true), 15000); // silent background refresh
     return () => clearInterval(iv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleRefresh = () => { setRefreshing(true); fetchData(); };
+  const handleRefresh = () => { setRefreshing(true); fetchData(false); };
 
   const getThreatChip = (threat) => {
     if (!threat || threat === 'None') return <Chip label="Safe" color="success" size="small" />;
@@ -253,7 +253,7 @@ export default function Dashboard({ onLogout }) {
               </Typography>
               {lastUpdate && (
                 <Typography variant="caption" color="text.secondary">
-                  Last updated {lastUpdate.toLocaleTimeString()}
+                  Last updated {lastUpdate.toLocaleTimeString('en-ZA', { timeZone: 'Africa/Johannesburg' })}
                 </Typography>
               )}
             </Box>

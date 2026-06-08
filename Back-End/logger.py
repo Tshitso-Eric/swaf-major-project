@@ -1,5 +1,5 @@
 from db import get_db_connection 
-from datetime import datetime 
+from datetime import datetime, timezone
 import json 
 
 def log_event(ip, action, rule, device="", attack=""): 
@@ -23,7 +23,7 @@ def log_event(ip, action, rule, device="", attack=""):
                     ) 
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) 
                 """, ( 
-                    datetime.now(), 
+                    datetime.now(timezone.utc), 
                     ip, 
                     "AUTH", # request_method 
                     "/login", # request_path 

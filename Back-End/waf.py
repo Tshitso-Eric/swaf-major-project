@@ -3,7 +3,7 @@ from typing import Tuple, Dict, List
 from fastapi import Request, HTTPException
 from urllib.parse import urlparse, urlunparse
 from db import get_db_connection
-from datetime import datetime
+from datetime import datetime, timezone
 from ml_model.ml_engine import HybridMLEngine
 from collections import deque
 
@@ -151,7 +151,7 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
                                   request_headers, request_body, threat_type, action, details)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
-                datetime.now(), client_ip, request.method, str(request.url),
+                datetime.now(timezone.utc), client_ip, request.method, str(request.url),
                 "", "", "Rate Limit", "BLOCKED",
                 f"Exceeded {RATE_LIMIT_MAX_REQUESTS} req/{RATE_LIMIT_WINDOW_SECONDS}s"
             ))
@@ -216,7 +216,7 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
-            datetime.now(), 
+            datetime.now(timezone.utc), 
             request.client.host, 
             request.method, 
             str(request.url), 
