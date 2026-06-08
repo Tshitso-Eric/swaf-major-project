@@ -4,13 +4,15 @@ import {
   Button, Switch, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, IconButton, Chip, Select, MenuItem, FormControl, InputLabel,
   InputAdornment, Tooltip, Alert, useTheme, TablePagination, Collapse,
+  Grid, CircularProgress, Divider,
 } from '@mui/material';
 import {
   Delete as DeleteIcon, Edit as EditIcon, Add as AddIcon,
   Search as SearchIcon, Shield as ShieldIcon, CheckCircle as CheckIcon,
-  Error as ErrorIcon,
+  Error as ErrorIcon, Lock as LockIcon, LockOpen as LockOpenIcon,
+  Http as HttpIcon, Https as HttpsIcon, Warning as WarningIcon,
 } from '@mui/icons-material';
-import { getRules, addRule, deleteRule, toggleRule, updateRule } from './api';
+import { getRules, addRule, deleteRule, toggleRule, updateRule, getPortStatus, blockPort, unblockPort } from './api';
 
 const THREAT_COLORS = {
   'SQL Injection':      '#ef4444',
@@ -180,6 +182,82 @@ function RuleForm({ value, onChange }) {
   );
 }
 
+/* ── Port Control Card ───────────────────────────────────────────────────── */
+const PORT_META = {
+  80:  { label: 'HTTP',  Icon: HttpIcon,  color: '#f59e0b' },
+  443: { label: 'HTTPS', Icon: HttpsIcon, color: '#3b82f6' },
+};
+
+function PortCard({ port, toggling, onToggle }) {
+  const theme   = useTheme();
+  const isDark  = theme.palette.mode === 'dark';
+  const meta    = PORT_META[port.port] || {};
+  const blocked = port.blocked;
+  const { Icon } = meta;
+
+  return (
+    <Paper elevation={0} sx={{
+      p: 2.5,
+      border: '2px solid',
+      borderColor: blocked ? '#ef444460' : `${meta.color}50`,
+      borderRadius: 2,
+      background: blocked
+        ? (isDark ? 'rgba(239,68,68,0.07)' : 'rgba(239,68,68,0.04)')
+        : (isDark ? 'rgba(255,255,255,0.02)' : '#fafafa'),
+      transition: 'all 0.25s',
+      display: 'flex', alignItems: 'center', gap: 2,
+    }}>
+      <Box sx={{
+        p: 1.2, borderRadius: 1.5,
+        bgcolor: blocked ? '#ef444420' : `${meta.color}18`,
+        display: 'flex', flexShrink: 0,
+      }}>
+        <Icon sx={{ color: blocked ? '#ef4444' : meta.color, fontSize: 26 }} />
+      </Box>
+
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.3 }}>
+          <Typography sx={{ fontWeight: 700, fontSize: '0.9rem' }}>
+            {meta.label}
+            <Typography component="span" sx={{ ml: 0.5, fontSize: '0.75rem', color: 'text.secondary' }}>
+              :{port.port}
+            </Typography>
+          </Typography>
+          <Chip
+            size="small"
+            icon={blocked ? <LockIcon sx={{ fontSize:'12px !important' }} /> : <LockOpenIcon sx={{ fontSize:'12px !important' }} />}
+            label={blocked ? 'BLOCKED' : 'OPEN'}
+            color={blocked ? 'error' : 'success'}
+            sx={{ fontWeight: 700, fontSize: '0.65rem', height: 20 }}
+          />
+        </Box>
+        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+          {port.port === 443
+            ? (blocked ? 'All traffic blocked. Admin dashboard still reachable.' : 'Encrypted traffic allowed.')
+            : (blocked ? 'All HTTP traffic dropped via iptables.' : 'Plain-text traffic allowed.')}
+        </Typography>
+        {port.port === 443 && blocked && (
+          <Typography variant="caption" sx={{ color: '#3b82f6', display: 'block', mt: 0.3 }}>
+            ℹ️ Admin paths (/login /api/) remain accessible.
+          </Typography>
+        )}
+      </Box>
+
+      <Button
+        size="small"
+        variant={blocked ? 'outlined' : 'contained'}
+        color={blocked ? 'success' : 'error'}
+        startIcon={toggling ? <CircularProgress size={13} color="inherit" /> : (blocked ? <LockOpenIcon /> : <LockIcon />)}
+        disabled={toggling}
+        onClick={() => onToggle(port.port, !blocked)}
+        sx={{ fontWeight: 700, flexShrink: 0, fontSize: '0.78rem' }}
+      >
+        {toggling ? '…' : (blocked ? 'Unblock' : 'Block')}
+      </Button>
+    </Paper>
+  );
+}
+
 export default function Rules() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -194,11 +272,37 @@ export default function Rules() {
   const [rowsPerPage, setRows]     = useState(20);
   const [newRule,     setNewRule]  = useState(BLANK_RULE);
 
+  // Port controls state
+  const [ports,       setPorts]    = useState([]);
+  const [toggling,    setToggling] = useState(null);
+  const [confirmPort, setConfirm]  = useState(null);
+
   const fetchRules = async () => {
     try { setRules(await getRules()); } catch {}
   };
 
-  useEffect(() => { fetchRules(); }, []);
+  const fetchPorts = async () => {
+    try { setPorts(await getPortStatus()); } catch {}
+  };
+
+  useEffect(() => { fetchRules(); fetchPorts(); }, []);
+
+  const handlePortToggle = (port, shouldBlock) => setConfirm({ port, shouldBlock });
+
+  const handlePortConfirm = async () => {
+    const { port, shouldBlock } = confirmPort;
+    setConfirm(null);
+    setToggling(port);
+    try {
+      shouldBlock ? await blockPort(port) : await unblockPort(port);
+      showAlert('success', `Port ${port} ${shouldBlock ? 'BLOCKED' : 'UNBLOCKED'} successfully`);
+      await fetchPorts();
+    } catch {
+      showAlert('error', `Failed to ${shouldBlock ? 'block' : 'unblock'} port ${port}`);
+    } finally {
+      setToggling(null);
+    }
+  };
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -256,6 +360,35 @@ export default function Rules() {
           {alert.msg}
         </Alert>
       )}
+
+      {/* ── Network Port Controls ── */}
+      <Paper elevation={0} sx={{ p: 2.5, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <ShieldIcon sx={{ color: 'primary.main', fontSize: 20 }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>Network Port Controls</Typography>
+          <Typography variant="caption" sx={{ color: 'text.secondary', ml: 0.5 }}>
+            — Block HTTP/HTTPS at firewall level (affects all traffic)
+          </Typography>
+        </Box>
+        <Grid container spacing={2}>
+          {ports.length === 0
+            ? [80, 443].map(p => (
+                <Grid item xs={12} md={6} key={p}>
+                  <Box sx={{ p: 2, border: '1px dashed', borderColor: 'divider', borderRadius: 2, opacity: 0.5 }}>
+                    <CircularProgress size={16} sx={{ mr: 1 }} /><Typography variant="caption">Loading port {p}…</Typography>
+                  </Box>
+                </Grid>
+              ))
+            : ports.map(port => (
+                <Grid item xs={12} md={6} key={port.port}>
+                  <PortCard port={port} toggling={toggling === port.port} onToggle={handlePortToggle} />
+                </Grid>
+              ))
+          }
+        </Grid>
+      </Paper>
+
+      <Divider sx={{ mb: 3 }} />
 
       {/* Stats */}
       <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
@@ -378,6 +511,29 @@ export default function Rules() {
           <Button variant="contained" onClick={handleSaveEdit}
             disabled={!editingRule?.rule_name || !editingRule?.pattern || !!validateRegex(editingRule?.pattern)}>
             Save Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Port confirm dialog */}
+      <Dialog open={!!confirmPort} onClose={() => setConfirm(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="warning" fontSize="small" />
+          {confirmPort?.shouldBlock ? 'Block' : 'Unblock'} Port {confirmPort?.port} ({PORT_META[confirmPort?.port]?.label})?
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            {confirmPort?.shouldBlock
+              ? confirmPort?.port === 443
+                ? 'All HTTPS traffic will be blocked. The SWAF admin dashboard (/login, /api/) stays reachable.'
+                : 'All HTTP traffic on port 80 will be dropped via iptables.'
+              : `Port ${confirmPort?.port} will be reopened and traffic allowed again.`}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setConfirm(null)}>Cancel</Button>
+          <Button variant="contained" color={confirmPort?.shouldBlock ? 'error' : 'success'} onClick={handlePortConfirm}>
+            {confirmPort?.shouldBlock ? 'Yes, Block' : 'Yes, Unblock'}
           </Button>
         </DialogActions>
       </Dialog>
