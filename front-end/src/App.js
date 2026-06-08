@@ -60,7 +60,7 @@ function App() {
     <ThemeContext.Provider value={colorMode}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <Router>
+        <Router basename="/swaf-admin">
           <Routes>
             <Route
               path="/"
