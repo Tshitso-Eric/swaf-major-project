@@ -462,12 +462,23 @@ async def get_model_metrics(_: dict = Depends(require_admin)):
 # ─── NETWORK PORT CONTROLS ───────────────────────────────────────────────────
 import subprocess
 
-MANAGEABLE_PORTS      = {80: "HTTP", 443: "HTTPS"}
-HTTPS_BLOCK_FLAG      = "/etc/nginx/swaf_https_blocked"   # waf.py checks this
-HTTPS_BLOCK_NGINX_CONF = "/etc/nginx/swaf_https_block.conf"  # nginx includes this
+MANAGEABLE_PORTS   = {80: "HTTP", 443: "HTTPS"}
+HTTPS_BLOCK_FLAG   = "/etc/nginx/swaf_https_blocked"          # waf.py checks this
+NGINX_CONF_PATH    = "/etc/nginx/sites-available/swaf"        # full config file
 
-_NGINX_BLOCK_CONTENT = b"# SWAF: HTTPS blocked\nlocation ^~ / { return 403; }\n"
-_NGINX_UNBLOCK_CONTENT = b"# SWAF: HTTPS not blocked\n"
+# Markers in nginx.conf — backend rewrites between these lines
+_MARKER_START = "# SWAF_ROOT_LOCATION_START"
+_MARKER_END   = "# SWAF_ROOT_LOCATION_END"
+
+_ROOT_NORMAL = """    location / {
+        root  /home/ubuntu/swaf/front-end/build;
+        try_files $uri $uri/ /index.html;
+        index index.html;
+    }"""
+
+_ROOT_BLOCKED = """    location / {
+        return 403;
+    }"""
 
 # Branded 403 block page served as a static file
 _BLOCK_PAGE_HTML = b"""<!DOCTYPE html>
@@ -547,25 +558,42 @@ def _apply_iptables(port: int, block: bool):
                 check=True)
 
 def _apply_https_nginx_block(block: bool):
-    """Write/clear the nginx include file and reload nginx.
-    Uses 'location ^~ / { return 403; }' so ALL traffic gets 403 —
-    admin exact-match locations in nginx.conf take priority.
-    A branded 403 HTML page is served via nginx error_page."""
+    """Rewrite the location / block in nginx.conf between SWAF markers,
+    then reload nginx. Admin exact-match locations always take priority."""
+    # Write branded 403 page for nginx error_page
     if block:
-        # Write the branded 403 page as a static file nginx can serve
         with open(_BLOCK_PAGE_PATH, "wb") as f:
             f.write(_BLOCK_PAGE_HTML)
-    content = _NGINX_BLOCK_CONTENT if block else _NGINX_UNBLOCK_CONTENT
-    proc = subprocess.run(
-        ["sudo", "tee", HTTPS_BLOCK_NGINX_CONF],
-        input=content, capture_output=True
-    )
+
+    # Read current nginx config
+    result = subprocess.run(["sudo", "cat", NGINX_CONF_PATH], capture_output=True, text=True, check=True)
+    conf = result.stdout
+
+    # Replace content between markers
+    import re as _re
+    new_root = _ROOT_BLOCKED if block else _ROOT_NORMAL
+    pattern = rf"({_re.escape(_MARKER_START)}\n).*?(\n    {_re.escape(_MARKER_END)})"
+    replacement = rf"\g<1>{new_root}\2"
+    new_conf, count = _re.subn(pattern, replacement, conf, flags=_re.DOTALL)
+    if count == 0:
+        raise ValueError("SWAF markers not found in nginx.conf — cannot update")
+
+    # Write back via sudo tee
+    proc = subprocess.run(["sudo", "tee", NGINX_CONF_PATH], input=new_conf.encode(), capture_output=True)
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, "tee")
+
+    # Update flag file
     if block:
         subprocess.run(["sudo", "touch", HTTPS_BLOCK_FLAG], check=True)
     else:
         subprocess.run(["sudo", "rm", "-f", HTTPS_BLOCK_FLAG], check=True)
+
+    # Test config before reloading
+    test = subprocess.run(["sudo", "nginx", "-t"], capture_output=True, text=True)
+    if test.returncode != 0:
+        raise ValueError(f"nginx config test failed: {test.stderr}")
+
     subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
 
 def _apply_port_block(port: int, block: bool):
