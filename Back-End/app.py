@@ -463,22 +463,16 @@ async def get_model_metrics(_: dict = Depends(require_admin)):
 import subprocess
 
 MANAGEABLE_PORTS   = {80: "HTTP", 443: "HTTPS"}
-HTTPS_BLOCK_FLAG   = "/etc/nginx/swaf_https_blocked"          # waf.py checks this
-NGINX_CONF_PATH    = "/etc/nginx/sites-available/swaf"        # full config file
+HTTPS_BLOCK_FLAG   = "/etc/nginx/swaf_https_blocked"     # waf.py checks this
+NGINX_ROOT_CONF    = "/home/ubuntu/swaf/nginx_root.conf" # ubuntu-owned, nginx includes this
 
-# Markers in nginx.conf — backend rewrites between these lines
-_MARKER_START = "# SWAF_ROOT_LOCATION_START"
-_MARKER_END   = "# SWAF_ROOT_LOCATION_END"
+_ROOT_NORMAL  = ("location / {\n"
+                 "    root  /home/ubuntu/swaf/front-end/build;\n"
+                 "    try_files $uri $uri/ /index.html;\n"
+                 "    index index.html;\n"
+                 "}\n")
 
-_ROOT_NORMAL = """    location / {
-        root  /home/ubuntu/swaf/front-end/build;
-        try_files $uri $uri/ /index.html;
-        index index.html;
-    }"""
-
-_ROOT_BLOCKED = """    location / {
-        return 403;
-    }"""
+_ROOT_BLOCKED = "location / {\n    return 403;\n}\n"
 
 # Branded 403 block page served as a static file
 _BLOCK_PAGE_HTML = b"""<!DOCTYPE html>
@@ -558,42 +552,29 @@ def _apply_iptables(port: int, block: bool):
                 check=True)
 
 def _apply_https_nginx_block(block: bool):
-    """Rewrite the location / block in nginx.conf between SWAF markers,
-    then reload nginx. Admin exact-match locations always take priority."""
-    # Write branded 403 page for nginx error_page
+    """Write location / to ubuntu-owned nginx_root.conf then reload nginx.
+    No sudo needed for writing — the file is owned by ubuntu.
+    Admin exact-match locations in nginx.conf always take priority."""
+    # Write branded 403 page for nginx error_page 403
     if block:
         with open(_BLOCK_PAGE_PATH, "wb") as f:
             f.write(_BLOCK_PAGE_HTML)
 
-    # Read current nginx config
-    result = subprocess.run(["sudo", "cat", NGINX_CONF_PATH], capture_output=True, text=True, check=True)
-    conf = result.stdout
+    # Write the root location config (no sudo needed — ubuntu owns this file)
+    content = _ROOT_BLOCKED if block else _ROOT_NORMAL
+    with open(NGINX_ROOT_CONF, "w") as f:
+        f.write(content)
 
-    # Replace content between markers
-    import re as _re
-    new_root = _ROOT_BLOCKED if block else _ROOT_NORMAL
-    pattern = rf"({_re.escape(_MARKER_START)}\n).*?(\n    {_re.escape(_MARKER_END)})"
-    replacement = rf"\g<1>{new_root}\2"
-    new_conf, count = _re.subn(pattern, replacement, conf, flags=_re.DOTALL)
-    if count == 0:
-        raise ValueError("SWAF markers not found in nginx.conf — cannot update")
-
-    # Write back via sudo tee
-    proc = subprocess.run(["sudo", "tee", NGINX_CONF_PATH], input=new_conf.encode(), capture_output=True)
-    if proc.returncode != 0:
-        raise subprocess.CalledProcessError(proc.returncode, "tee")
-
-    # Update flag file
+    # Maintain flag file for waf.py cross-check
     if block:
         subprocess.run(["sudo", "touch", HTTPS_BLOCK_FLAG], check=True)
     else:
         subprocess.run(["sudo", "rm", "-f", HTTPS_BLOCK_FLAG], check=True)
 
-    # Test config before reloading
+    # Test and reload nginx
     test = subprocess.run(["sudo", "nginx", "-t"], capture_output=True, text=True)
     if test.returncode != 0:
         raise ValueError(f"nginx config test failed: {test.stderr}")
-
     subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
 
 def _apply_port_block(port: int, block: bool):
