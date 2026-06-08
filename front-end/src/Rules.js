@@ -525,7 +525,7 @@ export default function Rules() {
           <Typography variant="body2" color="text.secondary">
             {confirmPort?.shouldBlock
               ? confirmPort?.port === 443
-                ? 'ALL HTTPS on this machine will be blocked via iptables — affects every app, not just eLoan. Dashboard becomes unreachable. Use SSH tunnel to restore: ssh -L 9443:127.0.0.1:443 ubuntu@132.145.20.178'
+                ? 'All HTTPS traffic will be blocked via nginx. Admin dashboard (/login, /api/) stays reachable.'
                 : 'All HTTP traffic on port 80 will be dropped via iptables.'
               : `Port ${confirmPort?.port} will be reopened and traffic allowed again.`}
           </Typography>

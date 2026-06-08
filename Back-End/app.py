@@ -553,37 +553,26 @@ def _apply_iptables(port: int, block: bool):
                 check=True)
 
 def _apply_https_nginx_block(block: bool):
-    """Block/unblock HTTPS (port 443) machine-wide via iptables DROP.
-    This blocks ALL HTTPS on the machine — not just SWAF traffic.
-
-    When blocked, the admin dashboard becomes unreachable via browser.
-    Restore access via SSH tunnel:
-      ssh -L 9443:127.0.0.1:443 ubuntu@<server-ip>
-      Then visit: https://localhost:9443
-    Or directly on the server: sudo iptables -D INPUT -p tcp --dport 443 -j DROP
-    """
-    # Write branded block page (for when nginx still serves some paths)
+    """Block/unblock HTTPS (port 443) via nginx only.
+    Admin paths (/login, /api/, /logs) stay reachable so the dashboard
+    is always accessible even when HTTPS is blocked."""
     if block:
         with open(_BLOCK_PAGE_PATH, "wb") as f:
             f.write(_BLOCK_PAGE_HTML)
 
-    # nginx soft-block: update location / so any traffic that sneaks through
-    # nginx (loopback, existing connections) also gets 403
     content = _ROOT_BLOCKED if block else _ROOT_NORMAL
     with open(NGINX_ROOT_CONF, "w") as f:
         f.write(content)
-    test = subprocess.run(["sudo", "nginx", "-t"], capture_output=True, text=True)
-    if test.returncode == 0:
-        subprocess.run(["sudo", "nginx", "-s", "reload"])
 
-    # iptables hard-block: drop ALL new TCP connections to port 443
-    _apply_iptables(443, block)
-
-    # Maintain flag file for waf.py
     if block:
         subprocess.run(["sudo", "touch", HTTPS_BLOCK_FLAG], check=True)
     else:
         subprocess.run(["sudo", "rm", "-f", HTTPS_BLOCK_FLAG], check=True)
+
+    test = subprocess.run(["sudo", "nginx", "-t"], capture_output=True, text=True)
+    if test.returncode != 0:
+        raise ValueError(f"nginx config test failed: {test.stderr}")
+    subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
 
 def _apply_port_block(port: int, block: bool):
     if port == 443:
@@ -637,12 +626,15 @@ async def get_port_status(_: dict = Depends(require_admin)):
     result = []
     for port, proto in MANAGEABLE_PORTS.items():
         db_blocked   = bool(states.get(port, {}).get("blocked", 0))
-        live_blocked = _iptables_rule_exists(port)
+        if port == 443:
+            live_blocked = _os_module.path.exists(HTTPS_BLOCK_FLAG)
+        else:
+            live_blocked = _iptables_rule_exists(port)
         result.append({
             "port":     port,
             "protocol": proto,
             "blocked":  db_blocked or live_blocked,
-            "method":   "iptables",
+            "method":   "nginx" if port == 443 else "iptables",
         })
     return result
 
