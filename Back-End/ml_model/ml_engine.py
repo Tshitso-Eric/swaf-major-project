@@ -150,7 +150,7 @@ class HybridMLEngine:
             # Step 11: Dynamic threshold
             # If we see suspicious markers, we use a more sensitive threshold (0.3)
             # Otherwise, use standard 0.5 to keep false positives low.
-            threshold = 0.3 if is_suspicious else 0.6
+            threshold = 0.3 if is_suspicious else 0.75
             
             if xgb_prob > threshold:
                 return "BLOCK", float(xgb_prob), "XGBoost_Attack"
