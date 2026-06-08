@@ -466,15 +466,61 @@ MANAGEABLE_PORTS      = {80: "HTTP", 443: "HTTPS"}
 HTTPS_BLOCK_FLAG      = "/etc/nginx/swaf_https_blocked"   # waf.py checks this
 HTTPS_BLOCK_NGINX_CONF = "/etc/nginx/swaf_https_block.conf"  # nginx includes this
 
-_NGINX_BLOCK_CONTENT = b"""# SWAF: HTTPS blocked by administrator
-# All non-admin traffic returns 403. Admin paths take priority via exact/prefix match above.
-location ^~ / {
-    default_type text/html;
-    return 403 '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>403 Blocked by SWAF</title><style>*{margin:0;padding:0;box-sizing:border-box}body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0f172a 100%);font-family:Segoe UI,sans-serif;color:#fff}.card{text-align:center;padding:48px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:20px;max-width:460px;width:90%}.shield{width:70px;height:70px;background:linear-gradient(135deg,#1d4ed8,#06b6d4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;font-size:32px}.badge{display:inline-block;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#ef4444;font-size:.7rem;font-weight:700;letter-spacing:.1em;padding:3px 12px;border-radius:999px;margin-bottom:20px}h1{font-size:1.5rem;font-weight:800;margin-bottom:10px}p{color:rgba(255,255,255,.6);font-size:.9rem;line-height:1.7}.footer{margin-top:28px;font-size:.7rem;color:rgba(255,255,255,.2)}</style></head><body><div class="card"><div class="shield">&#128737;</div><div class="badge">403 ACCESS DENIED</div><h1>HTTPS Access Blocked</h1><p>HTTPS traffic on this server has been<br><strong style="color:#fff">blocked by the SWAF administrator.</strong></p><div class="footer">SWAF &mdash; Smart Web Application Firewall &bull; swafff.duckdns.org</div></div></body></html>';
-}
+_NGINX_BLOCK_CONTENT = b"# SWAF: HTTPS blocked\nlocation ^~ / { return 403; }\n"
+_NGINX_UNBLOCK_CONTENT = b"# SWAF: HTTPS not blocked\n"
+
+# Branded 403 block page served as a static file
+_BLOCK_PAGE_HTML = b"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>403 Blocked by SWAF</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      min-height:100vh; display:flex; align-items:center; justify-content:center;
+      background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0f172a 100%);
+      font-family:'Segoe UI',sans-serif; color:#fff;
+    }
+    .card {
+      text-align:center; padding:52px 44px;
+      background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+      border-radius:20px; max-width:460px; width:90%;
+    }
+    .shield {
+      width:72px; height:72px;
+      background:linear-gradient(135deg,#dc2626,#ef4444);
+      border-radius:50%; display:flex; align-items:center;
+      justify-content:center; margin:0 auto 24px; font-size:34px;
+    }
+    h1 { font-size:1.5rem; font-weight:800; margin-bottom:10px; }
+    .badge {
+      display:inline-block;
+      background:rgba(239,68,68,.15); border:1px solid rgba(239,68,68,.4);
+      color:#ef4444; font-size:.7rem; font-weight:700;
+      letter-spacing:.1em; padding:3px 14px; border-radius:999px; margin-bottom:20px;
+    }
+    p { color:rgba(255,255,255,.6); font-size:.9rem; line-height:1.7; }
+    .footer { margin-top:28px; font-size:.7rem; color:rgba(255,255,255,.2); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="shield">&#128737;</div>
+    <div class="badge">403 ACCESS DENIED</div>
+    <h1>HTTPS Access Blocked</h1>
+    <p>
+      HTTPS traffic on this server has been<br>
+      <strong style="color:#fff">blocked by the SWAF administrator.</strong>
+    </p>
+    <div class="footer">SWAF &mdash; Smart Web Application Firewall &bull; swafff.duckdns.org</div>
+  </div>
+</body>
+</html>
 """
 
-_NGINX_UNBLOCK_CONTENT = b"# SWAF: HTTPS not blocked\n"
+_BLOCK_PAGE_PATH = "/home/ubuntu/swaf/front-end/build/swaf_block_443.html"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -502,17 +548,20 @@ def _apply_iptables(port: int, block: bool):
 
 def _apply_https_nginx_block(block: bool):
     """Write/clear the nginx include file and reload nginx.
-    Uses location ^~ / so ALL traffic gets 403 — but admin exact-match
-    locations defined above in nginx.conf always take priority."""
+    Uses 'location ^~ / { return 403; }' so ALL traffic gets 403 —
+    admin exact-match locations in nginx.conf take priority.
+    A branded 403 HTML page is served via nginx error_page."""
+    if block:
+        # Write the branded 403 page as a static file nginx can serve
+        with open(_BLOCK_PAGE_PATH, "wb") as f:
+            f.write(_BLOCK_PAGE_HTML)
     content = _NGINX_BLOCK_CONTENT if block else _NGINX_UNBLOCK_CONTENT
-    # Write via sudo tee so the www-data-owned nginx dir is writable
     proc = subprocess.run(
         ["sudo", "tee", HTTPS_BLOCK_NGINX_CONF],
         input=content, capture_output=True
     )
     if proc.returncode != 0:
         raise subprocess.CalledProcessError(proc.returncode, "tee")
-    # Also maintain the flag file so waf.py can cross-check
     if block:
         subprocess.run(["sudo", "touch", HTTPS_BLOCK_FLAG], check=True)
     else:
