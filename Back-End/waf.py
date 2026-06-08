@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Tuple, Dict, List
 from fastapi import Request, HTTPException
-from urllib.parse import urlparse, urlunparse, unquote_plus
+from urllib.parse import urlparse, urlunparse
 from db import get_db_connection
 from datetime import datetime, timezone
 from ml_model.ml_engine import HybridMLEngine
@@ -132,18 +132,45 @@ async def hybrid_detection(request: Request, inspect_text: str, body_str: str, h
     return "ALLOWED", None, None
 
 
-# Paths served by the SWAF API itself — kill switch and WAF inspection skip these
+# Paths served by the SWAF API itself — skip WAF inspection for these
 _SWAF_API_PREFIXES = (
-    "/login", "/logs", "/api/", "/docs", "/openapi", "/swaf-admin",
+    "/login", "/logs", "/api/", "/docs", "/openapi",
 )
 
-# Headers that can carry attacker-controlled values; others cause false positives
-_INSPECT_HEADERS = {
-    "user-agent", "referer", "x-forwarded-for", "x-real-ip",
-    "cookie", "x-custom-header", "x-api-key",
-}
 
-_SWAF_BLOCK_HTML = b"""<!DOCTYPE html>
+async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str]]:
+    client_ip = request.client.host
+
+    # Rate limit check — runs before any other inspection
+    if is_rate_limited(client_ip):
+        conn = get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO logs (timestamp, source_ip, request_method, request_path,
+                                  request_headers, request_body, threat_type, action, details)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                datetime.now(timezone.utc), client_ip, request.method, str(request.url),
+                "", "", "Rate Limit", "BLOCKED",
+                f"Exceeded {RATE_LIMIT_MAX_REQUESTS} req/{RATE_LIMIT_WINDOW_SECONDS}s"
+            ))
+            conn.commit()
+        except Exception as e:
+            print(f"[ERROR] Rate-limit log error: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+        print(f"[BLOCKED] Rate limit exceeded for {client_ip}")
+        return b"Too Many Requests", 429, {"Content-Type": "text/plain", "X-WAF-Status": "RateLimited"}
+
+    rules = await load_rules()
+
+    # ── Kill-switch: if any enabled rule has threat_type "Backend Unavailable",
+    #    block ALL proxied requests and show the branded SWAF page immediately.
+    kill_switch = next((r for r in rules if (r.get("threat_type") or "").strip() == "Backend Unavailable"), None)
+    if kill_switch:
+        SWAF_BLOCK_HTML = b"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -211,41 +238,7 @@ _SWAF_BLOCK_HTML = b"""<!DOCTYPE html>
   </div>
 </body>
 </html>"""
-
-
-async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str]]:
-    client_ip = request.client.host
-
-    # Rate limit check — runs before any other inspection
-    if is_rate_limited(client_ip):
-        conn = get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                INSERT INTO logs (timestamp, source_ip, request_method, request_path,
-                                  request_headers, request_body, threat_type, action, details)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                datetime.now(timezone.utc), client_ip, request.method, str(request.url),
-                "", "", "Rate Limit", "BLOCKED",
-                f"Exceeded {RATE_LIMIT_MAX_REQUESTS} req/{RATE_LIMIT_WINDOW_SECONDS}s"
-            ))
-            conn.commit()
-        except Exception as e:
-            print(f"[ERROR] Rate-limit log error: {e}")
-        finally:
-            cursor.close()
-            conn.close()
-        print(f"[BLOCKED] Rate limit exceeded for {client_ip}")
-        return b"Too Many Requests", 429, {"Content-Type": "text/plain", "X-WAF-Status": "RateLimited"}
-
-    rules = await load_rules()
-
-    # ── Kill-switch: block all eLoan traffic when a "Backend Unavailable" rule is enabled.
-    #    SWAF admin paths (_SWAF_API_PREFIXES) are always exempt so the dashboard stays reachable.
-    kill_switch = next((r for r in rules if (r.get("threat_type") or "").strip() == "Backend Unavailable"), None)
-    if kill_switch and not request.url.path.startswith(_SWAF_API_PREFIXES):
-        return _SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8"}
+        return SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8"}
 
     # Prepare data
     body_bytes = await request.body()
@@ -253,12 +246,20 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
     headers_dict = dict(request.headers)
     headers_str  = json.dumps(headers_dict)
 
+    # Only inspect headers that can carry attacker-controlled values.
+    # Standard browser headers like Accept, Accept-Encoding, Host are safe
+    # and cause false positives (e.g. Accept: */*  triggers SQL comment rule).
+    _INSPECT_HEADERS = {
+        "user-agent", "referer", "x-forwarded-for", "x-real-ip",
+        "cookie", "x-custom-header", "x-api-key",
+    }
     inspectable_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() in _INSPECT_HEADERS
     }
 
     # URL-decode the query string so patterns like \s+ match UNION+SELECT
+    from urllib.parse import unquote_plus
     decoded_query = unquote_plus(request.url.query) if request.url.query else ""
     path_and_query = request.url.path + (f"?{decoded_query}" if decoded_query else "")
     inspect_text   = f"{path_and_query} {json.dumps(inspectable_headers)} {body_str}"
@@ -314,7 +315,7 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
 
     if action == "BLOCKED":
         print(f"[BLOCKED] Request BLOCKED: {threat_types_safe} from {request.client.host}")
-        return _SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8", "X-WAF-Status": "Blocked"}
+        return f"BLOCKED: {threat_types_safe}".encode(), 403, {"Content-Type": "text/plain", "X-WAF-Status": "Blocked"}
 
     # Proxy request
     print(f"[ALLOWED] Request ALLOWED: {request.method} {request.url.path} from {request.client.host}")
