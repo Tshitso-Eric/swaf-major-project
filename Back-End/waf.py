@@ -140,6 +140,48 @@ _SWAF_API_PREFIXES = (
 # Flag file written by the backend when admin blocks port 443
 HTTPS_BLOCK_FLAG = "/etc/nginx/swaf_https_blocked"
 
+import os as _os_module
+
+# Branded block page — used by both kill switch and HTTPS port block
+_SWAF_BLOCK_HTML = b"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Protected by SWAF</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { min-height:100vh; display:flex; align-items:center; justify-content:center;
+           background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0f172a 100%);
+           font-family:'Segoe UI',sans-serif; color:#fff; }
+    .card { text-align:center; padding:56px 48px; background:rgba(255,255,255,.05);
+            border:1px solid rgba(255,255,255,.1); border-radius:20px;
+            max-width:480px; width:90%; }
+    .shield { width:80px; height:80px; background:linear-gradient(135deg,#1d4ed8,#06b6d4);
+              border-radius:50%; display:flex; align-items:center; justify-content:center;
+              margin:0 auto 28px; font-size:36px; }
+    h1 { font-size:1.6rem; font-weight:800; margin-bottom:12px; }
+    .badge { display:inline-block; background:rgba(16,185,129,.15);
+             border:1px solid rgba(16,185,129,.4); color:#10b981; font-size:.75rem;
+             font-weight:700; letter-spacing:.1em; padding:4px 14px;
+             border-radius:999px; margin-bottom:24px; }
+    p { color:rgba(255,255,255,.6); font-size:.95rem; line-height:1.7; margin-bottom:32px; }
+    .footer { margin-top:32px; font-size:.75rem; color:rgba(255,255,255,.25); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="shield">&#128737;</div>
+    <div class="badge">&#9679; SWAF ACTIVE</div>
+    <h1>Access Restricted</h1>
+    <p>This application is currently <strong style="color:#fff">blocked by SWAF</strong>
+    &mdash; Smart Web Application Firewall.<br/><br/>
+    Access has been restricted by the administrator.</p>
+    <div class="footer">SWAF &mdash; Smart Web Application Firewall &bull; swafff.duckdns.org</div>
+  </div>
+</body>
+</html>"""
+
 
 async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str]]:
     client_ip = request.client.host
@@ -173,7 +215,7 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
     #    block ALL proxied requests and show the branded SWAF page immediately.
     kill_switch = next((r for r in rules if (r.get("threat_type") or "").strip() == "Backend Unavailable"), None)
     if kill_switch:
-        SWAF_BLOCK_HTML = b"""<!DOCTYPE html>
+        _UNUSED_SWAF_BLOCK_HTML = b"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
@@ -241,13 +283,12 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
   </div>
 </body>
 </html>"""
-        return SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8"}
+        return _SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8"}
 
     # ── HTTPS port block: admin blocked port 443 via Network Controls.
     #    Admin paths are exempt so the dashboard stays reachable.
-    import os as _os
-    if _os.path.exists(HTTPS_BLOCK_FLAG) and not request.url.path.startswith(_SWAF_API_PREFIXES):
-        return SWAF_BLOCK_HTML, 503, {"Content-Type": "text/html; charset=utf-8"}
+    if _os_module.path.exists(HTTPS_BLOCK_FLAG) and not request.url.path.startswith(_SWAF_API_PREFIXES):
+        return _SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8"}
 
     # Prepare data
     body_bytes = await request.body()
