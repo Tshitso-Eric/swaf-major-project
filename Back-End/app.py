@@ -466,9 +466,10 @@ MANAGEABLE_PORTS   = {80: "HTTP", 443: "HTTPS"}
 HTTPS_BLOCK_FLAG   = "/etc/nginx/swaf_https_blocked"     # waf.py checks this
 NGINX_ROOT_CONF    = "/home/ubuntu/swaf/nginx_root.conf" # ubuntu-owned, nginx includes this
 
+_$ = chr(36)  # avoid any shell/template interpretation of dollar signs
 _ROOT_NORMAL  = ("location / {\n"
                  "    root  /home/ubuntu/swaf/front-end/build;\n"
-                 "    try_files $uri $uri/ /index.html;\n"
+                 f"    try_files {_$}uri {_$}uri/ /index.html;\n"
                  "    index index.html;\n"
                  "}\n")
 
