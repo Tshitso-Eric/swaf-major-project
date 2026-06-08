@@ -462,66 +462,75 @@ async def get_model_metrics(_: dict = Depends(require_admin)):
 # ─── NETWORK PORT CONTROLS ───────────────────────────────────────────────────
 import subprocess
 
-MANAGEABLE_PORTS = {80: "HTTP", 443: "HTTPS"}
+MANAGEABLE_PORTS  = {80: "HTTP", 443: "HTTPS"}
+HTTPS_BLOCK_FLAG  = "/etc/nginx/swaf_https_blocked"   # nginx checks this file
+
+# ── helpers ──────────────────────────────────────────────────────────────────
 
 def _iptables_rule_exists(port: int) -> bool:
-    """Return True if a DROP rule for this port is already in iptables INPUT chain."""
     try:
-        result = subprocess.run(
+        r = subprocess.run(
             ["sudo", "iptables", "-C", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "DROP"],
-            capture_output=True
-        )
-        return result.returncode == 0
+            capture_output=True)
+        return r.returncode == 0
     except Exception:
         return False
 
-def _apply_port_block(port: int, block: bool):
-    """Insert or remove the DROP rule for a port."""
+def _apply_iptables(port: int, block: bool):
+    """Add / remove a DROP rule for the port."""
     if block:
         if not _iptables_rule_exists(port):
             subprocess.run(
                 ["sudo", "iptables", "-I", "INPUT", "1", "-p", "tcp", "--dport", str(port), "-j", "DROP"],
-                check=True
-            )
+                check=True)
     else:
         while _iptables_rule_exists(port):
             subprocess.run(
                 ["sudo", "iptables", "-D", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "DROP"],
-                check=True
-            )
+                check=True)
+
+def _apply_https_nginx_block(block: bool):
+    """Create / remove the nginx flag file and reload nginx.
+    Port 443 is blocked at nginx level (not iptables) so admin paths stay reachable."""
+    if block:
+        subprocess.run(["sudo", "touch", HTTPS_BLOCK_FLAG], check=True)
+    else:
+        subprocess.run(["sudo", "rm", "-f", HTTPS_BLOCK_FLAG], check=True)
+    subprocess.run(["sudo", "systemctl", "reload", "nginx"], check=True)
+
+def _apply_port_block(port: int, block: bool):
+    if port == 443:
+        _apply_https_nginx_block(block)   # nginx-level — admin stays reachable
+    else:
+        _apply_iptables(port, block)       # iptables-level for HTTP
 
 def _get_port_state_from_db():
-    """Load port block states from DB (table: port_controls)."""
     conn = get_db_connection()
     try:
         cur = conn.cursor(dictionary=True)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS port_controls (
-                port INT PRIMARY KEY,
-                protocol VARCHAR(10),
-                blocked TINYINT(1) DEFAULT 0,
+                port       INT PRIMARY KEY,
+                protocol   VARCHAR(10),
+                blocked    TINYINT(1) DEFAULT 0,
                 updated_at DATETIME
             )
         """)
         conn.commit()
         cur.execute("SELECT port, protocol, blocked FROM port_controls")
         rows = {r["port"]: r for r in cur.fetchall()}
-        # Ensure both ports exist
         for port, proto in MANAGEABLE_PORTS.items():
             if port not in rows:
                 cur.execute(
                     "INSERT IGNORE INTO port_controls (port, protocol, blocked, updated_at) VALUES (%s,%s,0,NOW())",
-                    (port, proto)
-                )
+                    (port, proto))
         conn.commit()
         cur.execute("SELECT port, protocol, blocked FROM port_controls")
         return {r["port"]: r for r in cur.fetchall()}
     finally:
-        cur.close()
-        conn.close()
+        cur.close(); conn.close()
 
 def restore_port_controls_on_startup():
-    """Re-apply any blocked ports from DB when SWAF starts."""
     try:
         states = _get_port_state_from_db()
         for port, info in states.items():
@@ -531,66 +540,59 @@ def restore_port_controls_on_startup():
     except Exception as e:
         print(f"[WARN] Could not restore port controls: {e}")
 
-# Restore on startup
 restore_port_controls_on_startup()
 
+# ── API endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/api/network/ports", tags=["Network"])
 async def get_port_status(_: dict = Depends(require_admin)):
-    """Get current block status for HTTP (80) and HTTPS (443)."""
     states = _get_port_state_from_db()
     result = []
     for port, proto in MANAGEABLE_PORTS.items():
-        db_state  = states.get(port, {})
-        is_blocked = bool(db_state.get("blocked", 0))
-        # Cross-check with live iptables
-        live_blocked = _iptables_rule_exists(port)
+        db_blocked   = bool(states.get(port, {}).get("blocked", 0))
+        # Cross-check live state
+        if port == 443:
+            live_blocked = os.path.exists(HTTPS_BLOCK_FLAG)
+        else:
+            live_blocked = _iptables_rule_exists(port)
         result.append({
             "port":     port,
             "protocol": proto,
-            "blocked":  is_blocked or live_blocked,
+            "blocked":  db_blocked or live_blocked,
+            "method":   "nginx" if port == 443 else "iptables",
         })
     return result
 
 
 @app.post("/api/network/ports/{port}/block", tags=["Network"])
 async def block_port(port: int, admin: dict = Depends(require_admin)):
-    """Block all incoming traffic on the given port via iptables."""
     if port not in MANAGEABLE_PORTS:
-        raise HTTPException(400, f"Port {port} is not manageable. Allowed: {list(MANAGEABLE_PORTS)}")
+        raise HTTPException(400, f"Port {port} not manageable. Allowed: {list(MANAGEABLE_PORTS)}")
     try:
         _apply_port_block(port, True)
-        conn = get_db_connection()
-        cur  = conn.cursor()
-        cur.execute(
-            "UPDATE port_controls SET blocked=1, updated_at=NOW() WHERE port=%s", (port,)
-        )
-        conn.commit()
-        cur.close(); conn.close()
+        conn = get_db_connection(); cur = conn.cursor()
+        cur.execute("UPDATE port_controls SET blocked=1, updated_at=NOW() WHERE port=%s", (port,))
+        conn.commit(); cur.close(); conn.close()
         log_admin_action(admin.get("sub","?"), f"BLOCKED port {port} ({MANAGEABLE_PORTS[port]})", "PORT_BLOCK")
-        return {"port": port, "protocol": MANAGEABLE_PORTS[port], "blocked": True}
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(500, f"iptables error: {e}")
+        return {"port": port, "protocol": MANAGEABLE_PORTS[port], "blocked": True,
+                "note": "Admin paths (/login /api/ /logs) remain accessible." if port == 443 else "HTTP traffic dropped."}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/network/ports/{port}/unblock", tags=["Network"])
 async def unblock_port(port: int, admin: dict = Depends(require_admin)):
-    """Remove the DROP rule for the given port."""
     if port not in MANAGEABLE_PORTS:
-        raise HTTPException(400, f"Port {port} is not manageable. Allowed: {list(MANAGEABLE_PORTS)}")
+        raise HTTPException(400, f"Port {port} not manageable. Allowed: {list(MANAGEABLE_PORTS)}")
     try:
         _apply_port_block(port, False)
-        conn = get_db_connection()
-        cur  = conn.cursor()
-        cur.execute(
-            "UPDATE port_controls SET blocked=0, updated_at=NOW() WHERE port=%s", (port,)
-        )
-        conn.commit()
-        cur.close(); conn.close()
+        conn = get_db_connection(); cur = conn.cursor()
+        cur.execute("UPDATE port_controls SET blocked=0, updated_at=NOW() WHERE port=%s", (port,))
+        conn.commit(); cur.close(); conn.close()
         log_admin_action(admin.get("sub","?"), f"UNBLOCKED port {port} ({MANAGEABLE_PORTS[port]})", "PORT_UNBLOCK")
         return {"port": port, "protocol": MANAGEABLE_PORTS[port], "blocked": False}
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(500, f"iptables error: {e}")
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 # ─── WAF REVERSE PROXY (must be LAST) ────────────────────────────────────────

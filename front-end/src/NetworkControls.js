@@ -11,8 +11,8 @@ import {
 import { getPortStatus, blockPort, unblockPort } from './api';
 
 const PORT_INFO = {
-  80:  { label: 'HTTP',  icon: HttpIcon,  color: '#f59e0b', desc: 'Plain-text web traffic (port 80). Blocking this stops all unencrypted HTTP access.' },
-  443: { label: 'HTTPS', icon: HttpsIcon, color: '#3b82f6', desc: 'Encrypted web traffic (port 443). Blocking this takes down the entire site including this dashboard.' },
+  80:  { label: 'HTTP',  icon: HttpIcon,  color: '#f59e0b', desc: 'Plain-text web traffic (port 80). Blocked via iptables DROP — stops all unencrypted HTTP access.' },
+  443: { label: 'HTTPS', icon: HttpsIcon, color: '#3b82f6', desc: 'Encrypted web traffic (port 443). Blocked via nginx — all external traffic is blocked, but the SWAF admin dashboard stays fully accessible.' },
 };
 
 function PortCard({ port, onToggle, loading }) {
@@ -62,10 +62,9 @@ function PortCard({ port, onToggle, loading }) {
         {info.desc}
       </Typography>
 
-      {port.port === 443 && !blocked && (
-        <Alert severity="warning" icon={<WarningIcon />} sx={{ mb: 2, py: 0.5, fontSize: '0.8rem' }}>
-          Blocking HTTPS will lock everyone out including this admin panel.
-          You can restore access via SSH.
+      {port.port === 443 && blocked && (
+        <Alert severity="info" icon={<WarningIcon />} sx={{ mb: 2, py: 0.5, fontSize: '0.8rem' }}>
+          HTTPS is blocked via nginx. The SWAF admin dashboard is still accessible at /login and /api/.
         </Alert>
       )}
 
@@ -178,7 +177,8 @@ export default function NetworkControls() {
           • Blocking a port inserts an <code>iptables DROP</code> rule at the top of the INPUT chain on the Oracle Cloud server.<br />
           • The rule persists across SWAF restarts (stored in the database and re-applied on startup).<br />
           • Blocking HTTP (80) stops plain-text access — HTTPS still works.<br />
-          • Blocking HTTPS (443) takes down the entire site. Use SSH to restore: <code>sudo iptables -D INPUT -p tcp --dport 443 -j DROP</code>
+          • Blocking HTTPS (443) uses <strong>nginx</strong>, not iptables — admin paths (<code>/login</code>, <code>/api/</code>, <code>/logs</code>) stay reachable so you can always unblock from this dashboard.<br />
+          • Emergency restore via SSH: <code>sudo rm /etc/nginx/swaf_https_blocked && sudo systemctl reload nginx</code>
         </Typography>
       </Paper>
 
