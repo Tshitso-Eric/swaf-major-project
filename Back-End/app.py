@@ -653,7 +653,7 @@ async def block_port(port: int, admin: dict = Depends(require_admin)):
         conn = get_db_connection(); cur = conn.cursor()
         cur.execute("UPDATE port_controls SET blocked=1, updated_at=NOW() WHERE port=%s", (port,))
         conn.commit(); cur.close(); conn.close()
-        log_admin_action(admin.get("sub","?"), f"BLOCKED port {port} ({MANAGEABLE_PORTS[port]})", "PORT_BLOCK")
+        log_admin_action(admin.get("sub","?"), f"BLOCKED port {port} ({MANAGEABLE_PORTS[port]})", "PORT_BLOCK", "127.0.0.1", "SWAF-Admin")
         return {"port": port, "protocol": MANAGEABLE_PORTS[port], "blocked": True,
                 "note": "Admin paths (/login /api/ /logs) remain accessible." if port == 443 else "HTTP traffic dropped."}
     except Exception as e:
@@ -669,7 +669,7 @@ async def unblock_port(port: int, admin: dict = Depends(require_admin)):
         conn = get_db_connection(); cur = conn.cursor()
         cur.execute("UPDATE port_controls SET blocked=0, updated_at=NOW() WHERE port=%s", (port,))
         conn.commit(); cur.close(); conn.close()
-        log_admin_action(admin.get("sub","?"), f"UNBLOCKED port {port} ({MANAGEABLE_PORTS[port]})", "PORT_UNBLOCK")
+        log_admin_action(admin.get("sub","?"), f"UNBLOCKED port {port} ({MANAGEABLE_PORTS[port]})", "PORT_UNBLOCK", "127.0.0.1", "SWAF-Admin")
         return {"port": port, "protocol": MANAGEABLE_PORTS[port], "blocked": False}
     except Exception as e:
         raise HTTPException(500, str(e))
