@@ -263,4 +263,96 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
             return resp.content, resp.status_code, dict(resp.headers)
         except Exception as e:
             print(f"[ERROR] Proxy Error: {e}")
-            return b"Backend Unreachable", 502, {"Content-Type": "text/plain"}
+            html = b"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Protected by SWAF</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 60%, #0f172a 100%);
+      font-family: 'Segoe UI', sans-serif;
+      color: white;
+    }
+    .card {
+      text-align: center;
+      padding: 56px 48px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+      max-width: 480px;
+      width: 90%;
+    }
+    .shield {
+      width: 80px; height: 80px;
+      background: linear-gradient(135deg, #1d4ed8, #06b6d4);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      font-size: 36px;
+    }
+    h1 { font-size: 1.6rem; font-weight: 800; margin-bottom: 12px; }
+    .badge {
+      display: inline-block;
+      background: rgba(16,185,129,0.15);
+      border: 1px solid rgba(16,185,129,0.4);
+      color: #10b981;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 4px 14px;
+      border-radius: 999px;
+      margin-bottom: 24px;
+    }
+    p {
+      color: rgba(255,255,255,0.6);
+      font-size: 0.95rem;
+      line-height: 1.7;
+      margin-bottom: 32px;
+    }
+    .retry {
+      display: inline-block;
+      padding: 12px 32px;
+      background: linear-gradient(135deg, #1d4ed8, #06b6d4);
+      color: white;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.2s;
+    }
+    .retry:hover { opacity: 0.85; }
+    .footer {
+      margin-top: 32px;
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="shield">&#128737;</div>
+    <div class="badge">&#9679; SWAF ACTIVE</div>
+    <h1>Service Temporarily Unavailable</h1>
+    <p>
+      The eLoan application is currently unreachable.<br/>
+      Your connection is still <strong style="color:white">protected by SWAF</strong>
+      &mdash; Smart Web Application Firewall.
+    </p>
+    <button class="retry" onclick="location.reload()">Try Again</button>
+    <div class="footer">SWAF &mdash; Smart Web Application Firewall &bull; swafff.duckdns.org</div>
+  </div>
+</body>
+</html>"""
+            return html, 502, {"Content-Type": "text/html; charset=utf-8"}
