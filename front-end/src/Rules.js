@@ -3,23 +3,28 @@ import {
   Box, Typography, Paper, Table, TableContainer, TableHead, TableRow, TableCell, TableBody,
   Button, Switch, Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, IconButton, Chip, Select, MenuItem, FormControl, InputLabel,
-  InputAdornment, Tooltip, Alert, useTheme, TablePagination,
+  InputAdornment, Tooltip, Alert, useTheme, TablePagination, Collapse,
 } from '@mui/material';
 import {
   Delete as DeleteIcon, Edit as EditIcon, Add as AddIcon,
-  Search as SearchIcon, Shield as ShieldIcon,
+  Search as SearchIcon, Shield as ShieldIcon, CheckCircle as CheckIcon,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 import { getRules, addRule, deleteRule, toggleRule, updateRule } from './api';
 
 const THREAT_COLORS = {
-  'SQL Injection':    '#ef4444',
-  'XSS':             '#f59e0b',
-  'Path Traversal':  '#8b5cf6',
-  'Command Injection':'#f97316',
-  'SSRF':            '#06b6d4',
-  'XXE':             '#ec4899',
-  'LFI':             '#a855f7',
-  'Malicious Bot':   '#64748b',
+  'SQL Injection':      '#ef4444',
+  'XSS':               '#f59e0b',
+  'Path Traversal':    '#8b5cf6',
+  'Command Injection': '#f97316',
+  'SSRF':              '#06b6d4',
+  'XXE':               '#ec4899',
+  'LFI':               '#a855f7',
+  'RFI':               '#10b981',
+  'Malicious Bot':     '#64748b',
+  'Backend Unavailable': '#94a3b8',
+  'CSRF':              '#e11d48',
+  'Rate Limit':        '#0ea5e9',
 };
 
 const ThreatChip = ({ type }) => {
@@ -30,21 +35,164 @@ const ThreatChip = ({ type }) => {
   );
 };
 
-const THREAT_TYPES = ['SQL Injection','XSS','Path Traversal','Command Injection','SSRF','XXE','LFI','Malicious Bot'];
+const THREAT_TYPES = [
+  'SQL Injection', 'XSS', 'Path Traversal', 'Command Injection',
+  'SSRF', 'XXE', 'LFI', 'RFI', 'Malicious Bot', 'Backend Unavailable',
+  'CSRF', 'Rate Limit',
+];
+
+const BLANK_RULE = { rule_name: '', pattern: '', threat_type: '', action: 'BLOCK' };
+
+/* Validate a regex string — returns null if valid, error message if invalid */
+function validateRegex(pattern) {
+  if (!pattern) return null;
+  try { new RegExp(pattern); return null; }
+  catch (e) { return e.message; }
+}
+
+/* ── Reusable form inside Add/Edit dialogs ───────────────────────── */
+function RuleForm({ value, onChange }) {
+  const [testInput, setTestInput]   = useState('');
+  const [customType, setCustomType] = useState('');
+  const [showTest, setShowTest]     = useState(false);
+
+  const isCustom    = value.threat_type === '__custom__';
+  const regexError  = validateRegex(value.pattern);
+
+  // test the pattern against the test string
+  let testResult = null;
+  if (showTest && testInput && value.pattern && !regexError) {
+    try {
+      testResult = new RegExp(value.pattern, 'i').test(testInput);
+    } catch { testResult = null; }
+  }
+
+  const set = (field, val) => onChange({ ...value, [field]: val });
+
+  return (
+    <Box sx={{ pt: 1 }}>
+      {/* Rule Name */}
+      <TextField
+        fullWidth autoFocus label="Rule Name" size="small" sx={{ mb: 2 }}
+        value={value.rule_name}
+        onChange={e => set('rule_name', e.target.value)}
+        placeholder="e.g. SQL Injection - Union Select"
+      />
+
+      {/* Threat Type dropdown + optional custom input */}
+      <FormControl fullWidth size="small" sx={{ mb: isCustom ? 1 : 2 }}>
+        <InputLabel>Threat Type</InputLabel>
+        <Select
+          value={isCustom ? '__custom__' : (value.threat_type || '')}
+          label="Threat Type"
+          onChange={e => {
+            if (e.target.value === '__custom__') {
+              onChange({ ...value, threat_type: '__custom__' });
+            } else {
+              setCustomType('');
+              set('threat_type', e.target.value);
+            }
+          }}
+        >
+          {THREAT_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+          <MenuItem value="__custom__">✏️ Custom type…</MenuItem>
+        </Select>
+      </FormControl>
+      <Collapse in={isCustom}>
+        <TextField
+          fullWidth size="small" sx={{ mb: 2 }} label="Custom Threat Type"
+          value={customType}
+          onChange={e => {
+            setCustomType(e.target.value);
+            set('threat_type', e.target.value);
+          }}
+          placeholder="e.g. LDAP Injection"
+          autoFocus={isCustom}
+        />
+      </Collapse>
+
+      {/* Pattern field with live validation */}
+      <TextField
+        fullWidth size="small" sx={{ mb: 0.5 }}
+        label="Regex Pattern"
+        value={value.pattern}
+        onChange={e => set('pattern', e.target.value)}
+        multiline rows={3}
+        placeholder={'e.g. (?i)(union\\s+select|or\\s+1=1)'}
+        error={!!regexError}
+        helperText={
+          regexError
+            ? `⚠️ Invalid regex: ${regexError}`
+            : value.pattern
+              ? '✅ Valid regular expression'
+              : 'Regular expression matched against URL, headers and body'
+        }
+        inputProps={{ style: { fontFamily: 'monospace', fontSize: '0.85rem' } }}
+        InputProps={{
+          endAdornment: value.pattern && (
+            <InputAdornment position="end" sx={{ alignSelf: 'flex-start', mt: 1 }}>
+              {regexError
+                ? <ErrorIcon color="error" fontSize="small" />
+                : <CheckIcon color="success" fontSize="small" />}
+            </InputAdornment>
+          ),
+        }}
+      />
+
+      {/* Live pattern tester */}
+      <Button
+        size="small" sx={{ mb: 2, mt: 0.5, fontSize: '0.75rem' }}
+        onClick={() => setShowTest(p => !p)}
+        disabled={!value.pattern || !!regexError}
+      >
+        {showTest ? 'Hide tester' : '🧪 Test pattern'}
+      </Button>
+      <Collapse in={showTest}>
+        <Box sx={{ mb: 2, p: 1.5, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+          <TextField
+            fullWidth size="small" label="Test input string" sx={{ mb: 1 }}
+            value={testInput}
+            onChange={e => setTestInput(e.target.value)}
+            placeholder="Paste a URL or payload to test against the pattern"
+            inputProps={{ style: { fontFamily: 'monospace', fontSize: '0.82rem' } }}
+          />
+          {testInput && testResult !== null && (
+            <Chip
+              size="small"
+              label={testResult ? '🔴 MATCH — would be blocked' : '🟢 NO MATCH — would be allowed'}
+              color={testResult ? 'error' : 'success'}
+              sx={{ fontWeight: 700 }}
+            />
+          )}
+        </Box>
+      </Collapse>
+
+      {/* Action */}
+      <FormControl fullWidth size="small">
+        <InputLabel>Action</InputLabel>
+        <Select value={value.action} label="Action" onChange={e => set('action', e.target.value)}>
+          <MenuItem value="BLOCK">🔴 BLOCK</MenuItem>
+          <MenuItem value="LOG">🟡 LOG only</MenuItem>
+          <MenuItem value="ALLOW">🟢 ALLOW</MenuItem>
+        </Select>
+      </FormControl>
+    </Box>
+  );
+}
 
 export default function Rules() {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
 
-  const [rules,      setRules]     = useState([]);
-  const [search,     setSearch]    = useState('');
-  const [addOpen,    setAddOpen]   = useState(false);
-  const [editOpen,   setEditOpen]  = useState(false);
-  const [editingRule,setEditing]   = useState(null);
-  const [alert,      setAlert]     = useState(null);
-  const [page,       setPage]      = useState(0);
-  const [rowsPerPage,setRows]      = useState(20);
-  const [newRule,    setNewRule]   = useState({ rule_name:'', pattern:'', threat_type:'', action:'BLOCK' });
+  const [rules,       setRules]    = useState([]);
+  const [search,      setSearch]   = useState('');
+  const [addOpen,     setAddOpen]  = useState(false);
+  const [editOpen,    setEditOpen] = useState(false);
+  const [editingRule, setEditing]  = useState(null);
+  const [alert,       setAlert]    = useState(null);
+  const [page,        setPage]     = useState(0);
+  const [rowsPerPage, setRows]     = useState(20);
+  const [newRule,     setNewRule]  = useState(BLANK_RULE);
 
   const fetchRules = async () => {
     try { setRules(await getRules()); } catch {}
@@ -58,14 +206,14 @@ export default function Rules() {
   };
 
   const handleAdd = async () => {
-    if (!newRule.rule_name || !newRule.pattern) return;
+    if (!newRule.rule_name || !newRule.pattern || validateRegex(newRule.pattern)) return;
     try {
       await addRule(newRule);
       setAddOpen(false);
-      setNewRule({ rule_name:'', pattern:'', threat_type:'', action:'BLOCK' });
+      setNewRule(BLANK_RULE);
       await fetchRules();
       showAlert('success', 'Rule added successfully');
-    } catch (e) { showAlert('error', 'Failed to add rule'); }
+    } catch { showAlert('error', 'Failed to add rule'); }
   };
 
   const handleDelete = async (id) => {
@@ -79,6 +227,7 @@ export default function Rules() {
   };
 
   const handleSaveEdit = async () => {
+    if (validateRegex(editingRule.pattern)) return;
     try {
       await updateRule(editingRule.id, editingRule);
       setEditOpen(false); setEditing(null);
@@ -91,63 +240,38 @@ export default function Rules() {
     const q = search.toLowerCase();
     return rules.filter(r =>
       !q ||
-      (r.rule_name || '').toLowerCase().includes(q) ||
+      (r.rule_name   || '').toLowerCase().includes(q) ||
       (r.threat_type || '').toLowerCase().includes(q) ||
-      (r.pattern || '').toLowerCase().includes(q)
+      (r.pattern     || '').toLowerCase().includes(q)
     );
   }, [rules, search]);
 
-  const paginated = filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-  const enabledCount  = rules.filter(r => r.enabled === 1).length;
-
-  const RuleField = ({ label, value, onChange, multiline, helperText }) => (
-    <TextField fullWidth label={label} value={value} onChange={e => onChange(e.target.value)}
-      multiline={multiline} rows={multiline ? 3 : 1} helperText={helperText}
-      sx={{ mb:2 }} size="small" />
-  );
-
-  const ActionSelect = ({ value, onChange }) => (
-    <FormControl fullWidth size="small" sx={{ mb:2 }}>
-      <InputLabel>Action</InputLabel>
-      <Select value={value} label="Action" onChange={e => onChange(e.target.value)}>
-        <MenuItem value="BLOCK">🔴 BLOCK</MenuItem>
-        <MenuItem value="LOG">🟡 LOG</MenuItem>
-        <MenuItem value="ALLOW">🟢 ALLOW</MenuItem>
-      </Select>
-    </FormControl>
-  );
-
-  const ThreatSelect = ({ value, onChange }) => (
-    <FormControl fullWidth size="small" sx={{ mb:2 }}>
-      <InputLabel>Threat Type</InputLabel>
-      <Select value={value} label="Threat Type" onChange={e => onChange(e.target.value)}>
-        {THREAT_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-        <MenuItem value="">Custom…</MenuItem>
-      </Select>
-    </FormControl>
-  );
+  const paginated    = filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const enabledCount = rules.filter(r => r.enabled === 1).length;
 
   return (
     <Box>
-      {alert && <Alert severity={alert.type} sx={{ mb:3 }} onClose={() => setAlert(null)}>{alert.msg}</Alert>}
+      {alert && (
+        <Alert severity={alert.type} sx={{ mb: 3 }} onClose={() => setAlert(null)}>
+          {alert.msg}
+        </Alert>
+      )}
 
-      {/* Stats bar */}
-      <Box sx={{ display:'flex', gap:2, mb:3, flexWrap:'wrap' }}>
-        <Chip icon={<ShieldIcon />} label={`${rules.length} Total Rules`} sx={{ fontWeight:700 }} />
-        <Chip label={`${enabledCount} Active`}              color="success" variant="outlined" sx={{ fontWeight:700 }} />
-        <Chip label={`${rules.length - enabledCount} Disabled`} color="default" variant="outlined" sx={{ fontWeight:700 }} />
+      {/* Stats */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+        <Chip icon={<ShieldIcon />} label={`${rules.length} Total Rules`} sx={{ fontWeight: 700 }} />
+        <Chip label={`${enabledCount} Active`}                color="success" variant="outlined" sx={{ fontWeight: 700 }} />
+        <Chip label={`${rules.length - enabledCount} Disabled`} color="default" variant="outlined" sx={{ fontWeight: 700 }} />
       </Box>
 
       {/* Toolbar */}
-      <Box sx={{ display:'flex', gap:2, mb:3, flexWrap:'wrap' }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
         <TextField
-          placeholder="Search rules…"
-          value={search}
+          placeholder="Search rules…" value={search} size="small"
           onChange={e => { setSearch(e.target.value); setPage(0); }}
-          size="small"
-          sx={{ flex:1, minWidth:200 }}
+          sx={{ flex: 1, minWidth: 200 }}
           InputProps={{
-            startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color:'text.secondary' }} /></InputAdornment>
+            startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.secondary' }} /></InputAdornment>
           }}
         />
         <Button variant="contained" startIcon={<AddIcon />} onClick={() => setAddOpen(true)}>
@@ -155,15 +279,16 @@ export default function Rules() {
         </Button>
       </Box>
 
-      <Paper elevation={0} sx={{ border:`1px solid ${theme.palette.divider}` }}>
+      {/* Table */}
+      <Paper elevation={0} sx={{ border: `1px solid ${theme.palette.divider}` }}>
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                {['Rule Name','Threat Type','Pattern','Action','Active','Actions'].map(h => (
+                {['Rule Name', 'Threat Type', 'Pattern', 'Action', 'Active', 'Actions'].map(h => (
                   <TableCell key={h} sx={{
-                    fontWeight:700, fontSize:'0.75rem', textTransform:'uppercase',
-                    letterSpacing:'0.06em', bgcolor: isDark ? '#1e293b' : '#f8fafc',
+                    fontWeight: 700, fontSize: '0.75rem', textTransform: 'uppercase',
+                    letterSpacing: '0.06em', bgcolor: isDark ? '#1e293b' : '#f8fafc',
                   }}>{h}</TableCell>
                 ))}
               </TableRow>
@@ -174,27 +299,30 @@ export default function Rules() {
                   opacity: rule.enabled ? 1 : 0.5,
                   '&:hover': { bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' },
                 }}>
-                  <TableCell sx={{ fontWeight:600, fontSize:'0.85rem' }}>{rule.rule_name}</TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.85rem' }}>{rule.rule_name}</TableCell>
                   <TableCell><ThreatChip type={rule.threat_type} /></TableCell>
-                  <TableCell sx={{ maxWidth:240 }}>
+                  <TableCell sx={{ maxWidth: 240 }}>
                     <Tooltip title={rule.pattern}>
-                      <Typography sx={{ fontSize:'0.75rem', fontFamily:'monospace',
-                        overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:220 }}>
+                      <Typography sx={{
+                        fontSize: '0.75rem', fontFamily: 'monospace',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220,
+                      }}>
                         {rule.pattern}
                       </Typography>
                     </Tooltip>
                   </TableCell>
                   <TableCell>
                     <Chip label={rule.action} size="small"
-                      color={rule.action==='BLOCK'?'error': rule.action==='LOG'?'warning':'success'}
-                      sx={{ fontWeight:700, fontSize:'0.7rem' }} />
+                      color={rule.action === 'BLOCK' ? 'error' : rule.action === 'LOG' ? 'warning' : 'success'}
+                      sx={{ fontWeight: 700, fontSize: '0.7rem' }} />
                   </TableCell>
                   <TableCell>
                     <Switch checked={rule.enabled === 1} onChange={() => handleToggle(rule)} size="small" />
                   </TableCell>
                   <TableCell>
                     <Tooltip title="Edit">
-                      <IconButton size="small" color="primary" onClick={() => { setEditing({...rule}); setEditOpen(true); }}>
+                      <IconButton size="small" color="primary"
+                        onClick={() => { setEditing({ ...rule }); setEditOpen(true); }}>
                         <EditIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
@@ -208,7 +336,7 @@ export default function Rules() {
               ))}
               {paginated.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py:5, color:'text.secondary' }}>
+                  <TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>
                     {search ? 'No matching rules' : 'No rules configured'}
                   </TableCell>
                 </TableRow>
@@ -225,40 +353,32 @@ export default function Rules() {
       </Paper>
 
       {/* Add Dialog */}
-      <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight:700 }}>Add WAF Rule</DialogTitle>
-        <DialogContent sx={{ pt:2 }}>
-          <RuleField label="Rule Name" value={newRule.rule_name} onChange={v => setNewRule({...newRule, rule_name:v})} />
-          <ThreatSelect value={newRule.threat_type} onChange={v => setNewRule({...newRule, threat_type:v})} />
-          <RuleField label="Regex Pattern" value={newRule.pattern} onChange={v => setNewRule({...newRule, pattern:v})}
-            multiline helperText="Regular expression to match against requests" />
-          <ActionSelect value={newRule.action} onChange={v => setNewRule({...newRule, action:v})} />
+      <Dialog open={addOpen} onClose={() => { setAddOpen(false); setNewRule(BLANK_RULE); }} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Add WAF Rule</DialogTitle>
+        <DialogContent>
+          <RuleForm value={newRule} onChange={setNewRule} />
         </DialogContent>
-        <DialogActions sx={{ px:3, pb:3 }}>
-          <Button onClick={() => setAddOpen(false)}>Cancel</Button>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={() => { setAddOpen(false); setNewRule(BLANK_RULE); }}>Cancel</Button>
           <Button variant="contained" onClick={handleAdd}
-            disabled={!newRule.rule_name || !newRule.pattern}>Add Rule</Button>
+            disabled={!newRule.rule_name || !newRule.pattern || !!validateRegex(newRule.pattern)}>
+            Add Rule
+          </Button>
         </DialogActions>
       </Dialog>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onClose={() => { setEditOpen(false); setEditing(null); }} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight:700 }}>Edit Rule</DialogTitle>
-        <DialogContent sx={{ pt:2 }}>
-          {editingRule && <>
-            <RuleField label="Rule Name" value={editingRule.rule_name}
-              onChange={v => setEditing({...editingRule, rule_name:v})} />
-            <ThreatSelect value={editingRule.threat_type}
-              onChange={v => setEditing({...editingRule, threat_type:v})} />
-            <RuleField label="Regex Pattern" value={editingRule.pattern}
-              onChange={v => setEditing({...editingRule, pattern:v})} multiline />
-            <ActionSelect value={editingRule.action}
-              onChange={v => setEditing({...editingRule, action:v})} />
-          </>}
+        <DialogTitle sx={{ fontWeight: 700 }}>Edit Rule</DialogTitle>
+        <DialogContent>
+          {editingRule && <RuleForm value={editingRule} onChange={setEditing} />}
         </DialogContent>
-        <DialogActions sx={{ px:3, pb:3 }}>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
           <Button onClick={() => { setEditOpen(false); setEditing(null); }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveEdit}>Save Changes</Button>
+          <Button variant="contained" onClick={handleSaveEdit}
+            disabled={!editingRule?.rule_name || !editingRule?.pattern || !!validateRegex(editingRule?.pattern)}>
+            Save Changes
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
