@@ -184,8 +184,8 @@ function RuleForm({ value, onChange }) {
 
 /* ── Port Control Card ───────────────────────────────────────────────────── */
 const PORT_META = {
-  80:  { label: 'HTTP',  Icon: HttpIcon,  color: '#f59e0b' },
-  443: { label: 'HTTPS', Icon: HttpsIcon, color: '#3b82f6' },
+  80:  { label: 'HTTP',  Icon: HttpIcon,  color: '#f59e0b', method: 'iptables' },
+  443: { label: 'HTTPS', Icon: HttpsIcon, color: '#3b82f6', method: 'iptables' },
 };
 
 function PortCard({ port, toggling, onToggle }) {
@@ -525,7 +525,7 @@ export default function Rules() {
           <Typography variant="body2" color="text.secondary">
             {confirmPort?.shouldBlock
               ? confirmPort?.port === 443
-                ? 'All HTTPS traffic will be blocked. The SWAF admin dashboard (/login, /api/) stays reachable.'
+                ? 'ALL HTTPS on this machine will be blocked via iptables — affects every app, not just eLoan. Dashboard becomes unreachable. Use SSH tunnel to restore: ssh -L 9443:127.0.0.1:443 ubuntu@132.145.20.178'
                 : 'All HTTP traffic on port 80 will be dropped via iptables.'
               : `Port ${confirmPort?.port} will be reopened and traffic allowed again.`}
           </Typography>

@@ -11,8 +11,8 @@ import {
 import { getPortStatus, blockPort, unblockPort } from './api';
 
 const PORT_INFO = {
-  80:  { label: 'HTTP',  icon: HttpIcon,  color: '#f59e0b', desc: 'Plain-text web traffic (port 80). Blocked via iptables DROP — stops all unencrypted HTTP access.' },
-  443: { label: 'HTTPS', icon: HttpsIcon, color: '#3b82f6', desc: 'Encrypted web traffic (port 443). Blocked via nginx — all external traffic is blocked, but the SWAF admin dashboard stays fully accessible.' },
+  80:  { label: 'HTTP',  icon: HttpIcon,  color: '#f59e0b', desc: 'Plain-text web traffic (port 80). Blocked via iptables DROP — stops all unencrypted HTTP access on this machine.' },
+  443: { label: 'HTTPS', icon: HttpsIcon, color: '#3b82f6', desc: 'Encrypted web traffic (port 443). Blocked via iptables DROP — stops ALL HTTPS on this machine including all apps, not just eLoan.' },
 };
 
 function PortCard({ port, onToggle, loading }) {
@@ -63,8 +63,10 @@ function PortCard({ port, onToggle, loading }) {
       </Typography>
 
       {port.port === 443 && blocked && (
-        <Alert severity="info" icon={<WarningIcon />} sx={{ mb: 2, py: 0.5, fontSize: '0.8rem' }}>
-          HTTPS is blocked via nginx. The SWAF admin dashboard is still accessible at /login and /api/.
+        <Alert severity="warning" icon={<WarningIcon />} sx={{ mb: 2, py: 0.5, fontSize: '0.8rem' }}>
+          ALL HTTPS blocked via iptables. To manage SWAF, use an SSH tunnel:<br/>
+          <code style={{fontSize:'0.75rem'}}>ssh -L 9443:127.0.0.1:443 ubuntu@132.145.20.178</code><br/>
+          Then visit: <code style={{fontSize:'0.75rem'}}>https://localhost:9443</code>
         </Alert>
       )}
 
@@ -177,8 +179,10 @@ export default function NetworkControls() {
           • Blocking a port inserts an <code>iptables DROP</code> rule at the top of the INPUT chain on the Oracle Cloud server.<br />
           • The rule persists across SWAF restarts (stored in the database and re-applied on startup).<br />
           • Blocking HTTP (80) stops plain-text access — HTTPS still works.<br />
-          • Blocking HTTPS (443) uses <strong>nginx</strong>, not iptables — admin paths (<code>/login</code>, <code>/api/</code>, <code>/logs</code>) stay reachable so you can always unblock from this dashboard.<br />
-          • Emergency restore via SSH: <code>sudo rm /etc/nginx/swaf_https_blocked && sudo systemctl reload nginx</code>
+          • Blocking HTTPS (443) uses <strong>iptables DROP</strong> — stops ALL HTTPS on the entire machine (all apps, not just eLoan).<br />
+          • When blocked, this dashboard becomes unreachable. Restore via SSH tunnel:<br />
+          &nbsp;&nbsp;<code>ssh -L 9443:127.0.0.1:443 ubuntu@132.145.20.178</code> → visit <code>https://localhost:9443</code><br />
+          • Or restore directly on the server: <code>sudo iptables -D INPUT -p tcp --dport 443 -j DROP</code>
         </Typography>
       </Paper>
 
