@@ -132,10 +132,13 @@ async def hybrid_detection(request: Request, inspect_text: str, body_str: str, h
     return "ALLOWED", None, None
 
 
-# Paths served by the SWAF API itself — skip WAF inspection for these
+# Paths served by the SWAF API itself — kill switch and port block skip these
 _SWAF_API_PREFIXES = (
     "/login", "/logs", "/api/", "/docs", "/openapi",
 )
+
+# Flag file written by the backend when admin blocks port 443
+HTTPS_BLOCK_FLAG = "/etc/nginx/swaf_https_blocked"
 
 
 async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str]]:
@@ -239,6 +242,12 @@ async def inspect_and_proxy(request: Request) -> Tuple[bytes, int, Dict[str, str
 </body>
 </html>"""
         return SWAF_BLOCK_HTML, 403, {"Content-Type": "text/html; charset=utf-8"}
+
+    # ── HTTPS port block: admin blocked port 443 via Network Controls.
+    #    Admin paths are exempt so the dashboard stays reachable.
+    import os as _os
+    if _os.path.exists(HTTPS_BLOCK_FLAG) and not request.url.path.startswith(_SWAF_API_PREFIXES):
+        return SWAF_BLOCK_HTML, 503, {"Content-Type": "text/html; charset=utf-8"}
 
     # Prepare data
     body_bytes = await request.body()
