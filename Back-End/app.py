@@ -627,7 +627,7 @@ async def get_port_status(_: dict = Depends(require_admin)):
     for port, proto in MANAGEABLE_PORTS.items():
         db_blocked   = bool(states.get(port, {}).get("blocked", 0))
         if port == 443:
-            live_blocked = _os_module.path.exists(HTTPS_BLOCK_FLAG)
+            live_blocked = os.path.exists(HTTPS_BLOCK_FLAG)
         else:
             live_blocked = _iptables_rule_exists(port)
         result.append({
