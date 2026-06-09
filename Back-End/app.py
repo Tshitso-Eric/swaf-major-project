@@ -462,9 +462,10 @@ async def get_model_metrics(_: dict = Depends(require_admin)):
 # ─── NETWORK PORT CONTROLS ───────────────────────────────────────────────────
 import subprocess
 
-MANAGEABLE_PORTS   = {80: "HTTP", 443: "HTTPS"}
-HTTPS_BLOCK_FLAG   = "/etc/nginx/swaf_https_blocked"     # waf.py checks this
-NGINX_ROOT_CONF    = "/home/ubuntu/swaf/nginx_root.conf" # ubuntu-owned, nginx includes this
+MANAGEABLE_PORTS       = {80: "HTTP", 443: "HTTPS"}
+HTTPS_BLOCK_FLAG       = "/etc/nginx/swaf_https_blocked"          # waf.py checks this
+NGINX_ROOT_CONF        = "/home/ubuntu/swaf/nginx_root.conf"      # HTTPS root location
+NGINX_HTTP_DEFAULT_CONF = "/home/ubuntu/swaf/nginx_http_default.conf"  # HTTP default_server
 
 _DOLLAR = chr(36)  # nginx variable prefix — avoids template/shell interpretation
 _ROOT_NORMAL  = ("location / {\n"
@@ -474,6 +475,10 @@ _ROOT_NORMAL  = ("location / {\n"
                  "}\n")
 
 _ROOT_BLOCKED = _ROOT_NORMAL   # SWAF dashboard stays fully accessible when HTTPS is blocked
+
+# HTTP default_server content — swafff.duckdns.org server block is EXEMPT so SWAF never blocked
+_HTTP_DEFAULT_NORMAL  = f"return 301 https://swafff.duckdns.org{_DOLLAR}request_uri;\n"
+_HTTP_DEFAULT_BLOCKED = "return 403;\n"
 
 # Branded 403 block page served as a static file
 _BLOCK_PAGE_HTML = b"""<!DOCTYPE html>
@@ -552,6 +557,19 @@ def _apply_iptables(port: int, block: bool):
                 ["sudo", "iptables", "-D", "INPUT", "-p", "tcp", "--dport", str(port), "-j", "DROP"],
                 check=True)
 
+def _apply_http_nginx_block(block: bool):
+    """Block/unblock HTTP (port 80) via nginx default_server.
+    swafff.duckdns.org has its own server block that ALWAYS redirects to HTTPS
+    so SWAF is never blocked — only other HTTP traffic on port 80 is affected."""
+    content = _HTTP_DEFAULT_BLOCKED if block else _HTTP_DEFAULT_NORMAL
+    with open(NGINX_HTTP_DEFAULT_CONF, "w") as f:
+        f.write(content)
+    test = subprocess.run(["sudo", "nginx", "-t"], capture_output=True, text=True)
+    if test.returncode != 0:
+        raise ValueError(f"nginx config test failed: {test.stderr}")
+    subprocess.run(["sudo", "nginx", "-s", "reload"], check=True)
+
+
 def _apply_https_nginx_block(block: bool):
     """Block/unblock HTTPS (port 443) via nginx only.
     Admin paths (/login, /api/, /logs) stay reachable so the dashboard
@@ -576,9 +594,9 @@ def _apply_https_nginx_block(block: bool):
 
 def _apply_port_block(port: int, block: bool):
     if port == 443:
-        _apply_https_nginx_block(block)   # nginx-level — admin stays reachable
-    else:
-        _apply_iptables(port, block)       # iptables-level for HTTP
+        _apply_https_nginx_block(block)      # nginx — SWAF dashboard stays reachable
+    elif port == 80:
+        _apply_http_nginx_block(block)       # nginx — swafff.duckdns.org always reachable
 
 def _get_port_state_from_db():
     conn = get_db_connection()
@@ -608,6 +626,11 @@ def _get_port_state_from_db():
 
 def restore_port_controls_on_startup():
     try:
+        # Remove any leftover iptables rules for port 80 (old approach)
+        _apply_iptables(80, False)
+    except Exception:
+        pass
+    try:
         states = _get_port_state_from_db()
         for port, info in states.items():
             if info["blocked"]:
@@ -629,12 +652,17 @@ async def get_port_status(_: dict = Depends(require_admin)):
         if port == 443:
             live_blocked = os.path.exists(HTTPS_BLOCK_FLAG)
         else:
-            live_blocked = _iptables_rule_exists(port)
+            # port 80: check nginx_http_default.conf content
+            try:
+                with open(NGINX_HTTP_DEFAULT_CONF) as f:
+                    live_blocked = "return 403" in f.read()
+            except Exception:
+                live_blocked = False
         result.append({
             "port":     port,
             "protocol": proto,
             "blocked":  db_blocked or live_blocked,
-            "method":   "nginx" if port == 443 else "iptables",
+            "method":   "nginx",
         })
     return result
 
