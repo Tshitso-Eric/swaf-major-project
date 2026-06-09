@@ -12,7 +12,7 @@ import { getPortStatus, blockPort, unblockPort } from './api';
 
 const PORT_INFO = {
   80:  { label: 'HTTP',  icon: HttpIcon,  color: '#f59e0b', desc: 'Plain-text web traffic (port 80). Blocked via iptables DROP — stops all unencrypted HTTP access.' },
-  443: { label: 'HTTPS', icon: HttpsIcon, color: '#3b82f6', desc: 'Encrypted web traffic (port 443). Blocked via nginx — all external traffic is blocked, but the SWAF admin dashboard stays fully accessible.' },
+  443: { label: 'HTTPS', icon: HttpsIcon, color: '#3b82f6', desc: 'Encrypted web traffic (port 443). Blocks all eLoan routes — SWAF admin dashboard remains fully accessible and operational.' },
 };
 
 function PortCard({ port, onToggle, loading }) {
@@ -64,7 +64,7 @@ function PortCard({ port, onToggle, loading }) {
 
       {port.port === 443 && blocked && (
         <Alert severity="info" icon={<WarningIcon />} sx={{ mb: 2, py: 0.5, fontSize: '0.8rem' }}>
-          HTTPS blocked via nginx. Admin dashboard still accessible at /login and /api/.
+          eLoan routes are blocked. SWAF dashboard is fully accessible — you can manage rules, view logs, and unblock at any time.
         </Alert>
       )}
 

@@ -473,7 +473,7 @@ _ROOT_NORMAL  = ("location / {\n"
                  "    index index.html;\n"
                  "}\n")
 
-_ROOT_BLOCKED = "location / {\n    return 403;\n}\n"
+_ROOT_BLOCKED = _ROOT_NORMAL   # SWAF dashboard stays fully accessible when HTTPS is blocked
 
 # Branded 403 block page served as a static file
 _BLOCK_PAGE_HTML = b"""<!DOCTYPE html>
