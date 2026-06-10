@@ -10,7 +10,7 @@ const axiosInstance = axios.create({
 // Request interceptor to add the latest token to every request
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = sessionStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -24,7 +24,7 @@ axiosInstance.interceptors.request.use(
 export const login = async (username, password) => {
   const response = await axios.post(`${API_BASE_URL}/login`, { username, password });
   if (response.data.token) {
-    localStorage.setItem('token', response.data.token);
+    sessionStorage.setItem('token', response.data.token);
   }
   return response.data;
 };

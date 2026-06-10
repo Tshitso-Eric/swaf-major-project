@@ -8,7 +8,7 @@ import Dashboard from './Dashboard';
 export const ThemeContext = createContext({ toggleColorMode: () => {}, mode: 'light' });
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('token'));
+  const [isLoggedIn, setIsLoggedIn] = useState(!!sessionStorage.getItem('token'));
   const [mode, setMode] = useState(() => localStorage.getItem('themeMode') || 'dark');
 
   const colorMode = useMemo(() => ({
@@ -52,7 +52,7 @@ function App() {
 
   const handleLogin = () => setIsLoggedIn(true);
   const handleLogout = () => {
-    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
     setIsLoggedIn(false);
   };
 
